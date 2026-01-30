@@ -13,7 +13,11 @@
     "demo:hooks": "bun run demo/hooks.ts",
     "demo:sessions": "bun run demo/sessions.ts",
     "demo:permissions": "bun run demo/permissions.ts",
-    "demo:all": "bun run demo/subagents.ts && bun run demo/mcp-servers.ts && bun run demo/hooks.ts && bun run demo/sessions.ts && bun run demo/permissions.ts"
+    "demo:all": "bun run demo/subagents.ts && bun run demo/mcp-servers.ts && bun run demo/hooks.ts && bun run demo/sessions.ts && bun run demo/permissions.ts",
+    "tagging:audit": "bun run tagging-agent.ts audit",
+    "tagging:plan": "bun run tagging-agent.ts plan",
+    "tagging:execute": "bun run tagging-agent.ts execute",
+    "tagging:verify": "bun run tagging-agent.ts verify"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",
