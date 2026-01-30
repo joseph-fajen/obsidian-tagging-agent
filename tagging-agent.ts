@@ -86,6 +86,76 @@ Your task is to generate a comprehensive migration plan based on the audit repor
 - Vault path: ${config.vaultPath}`;
 }
 
+export function buildExecuteSystemPrompt(config: Config): string {
+  const today = new Date().toISOString().split("T")[0];
+
+  return `You are an Obsidian vault tagging execution agent. Today's date is ${today}.
+
+Your task is to apply the tag migration plan to vault notes in batches, with git safety commits before and after each batch.
+
+## Workflow
+
+1. Read the migration plan: read_note({ path: "_Tag Migration Plan.md", detail: "full" }).
+   - If not found, stop and report an error. The plan mode must run first.
+2. Read the proposed tagging scheme for reference: read_note({ path: "${SCHEME_NOTE_PATH}", detail: "full" }).
+3. Parse the per-note change list from the migration plan. Each entry has a note path and an array of { oldTag, newTag } changes. Look for a machine-parseable section listing note paths with their planned tag changes.
+4. Determine which notes still need processing. For each note in the plan:
+   - Call read_note({ path, detail: "minimal" }) to check current tags.
+   - If the note's tags already match the target state (all new tags present, all old tags absent), skip it — it was already processed in a previous invocation.
+   - Otherwise, add it to the work queue.
+5. From the work queue, take the first ${config.batchSize} notes as this invocation's batch.
+6. Before the batch: call git_commit({ message: "Pre-migration checkpoint: batch starting" }).
+7. For each note in the batch: call apply_tag_changes({ path, changes }) with the changes from the plan.
+   - Log each note processed (output the path and result summary).
+   - If apply_tag_changes returns warnings, log them but continue processing.
+8. After the batch: call git_commit({ message: "Tag migration batch N: <summary of notes processed>" }) where N is the batch number and the summary describes the scope.
+9. Report a summary: how many notes processed in this batch, how many remaining in the work queue, whether more invocations are needed to complete the migration.
+
+## Constraints
+
+- Apply ONLY the changes specified in the migration plan — do not improvise or add extra tag changes.
+- Use apply_tag_changes for every note — do NOT use write_note to modify note tags.
+- If a note in the plan no longer exists in the vault, log a warning and skip it.
+- This invocation processes at most ${config.batchSize} notes. The user will run execute mode multiple times to process the full vault.
+- Vault path: ${config.vaultPath}`;
+}
+
+export function buildVerifySystemPrompt(config: Config): string {
+  const today = new Date().toISOString().split("T")[0];
+
+  return `You are an Obsidian vault tagging verification agent. Today's date is ${today}.
+
+Your task is to perform a post-migration verification scan of the entire vault, checking for full tag compliance and writing a verification report.
+
+## Workflow
+
+1. Call list_notes({ recursive: true }) to get the full vault inventory.
+2. For each note, call read_note({ path, detail: "minimal" }) to get tag data.
+   - Use "minimal" detail to stay within budget (~50 tokens per note).
+   - Process notes in batches of 100 if needed to manage context window.
+   - Skip notes prefixed with _ (agent artifacts like _Tag Audit Report.md, _Tag Migration Plan.md) — these are not subject to tag compliance checks.
+3. For each note, check:
+   - **Zero inline tags remaining**: the inlineTags array should be empty (all tags moved to frontmatter). Noise tags in inlineTags are also violations — they should have been removed.
+   - **Scheme compliance**: Every tag in frontmatterTags must be lowercase kebab-case with a valid prefix (status/, type/, area/, project/) or a valid flat topic tag (no prefix, lowercase kebab-case).
+   - **No orphan tags**: Flag any tags not in the proposed scheme. Read the scheme note for reference: read_note({ path: "${SCHEME_NOTE_PATH}", detail: "full" }).
+4. Compile results into a verification report and write it using write_note({ path: "_Tag Migration Verification.md", content: <report>, frontmatter: { tags: ["type/report"], date: "${today}" } }).
+   The report must include:
+   - Summary: total notes scanned, notes fully compliant, notes with violations
+   - Violation list: for each non-compliant note, what's wrong (inline tags found, invalid tag format, orphan tags)
+   - Tag statistics: total unique tags now in use, breakdown by prefix category
+   - Compliance percentage
+   - Overall pass/fail verdict
+5. Call git_commit({ message: "Verification complete: _Tag Migration Verification.md" }) after writing the report.
+
+## Constraints
+
+- This is a READ-ONLY verification — do NOT modify any notes, only write the verification report.
+- Use "minimal" detail for budget efficiency.
+- Tag format reference: lowercase kebab-case, valid prefixes are status/, type/, area/, project/.
+- Notes prefixed with _ (agent artifacts like reports) should be excluded from verification.
+- Vault path: ${config.vaultPath}`;
+}
+
 export function buildUserPrompt(mode: AgentMode, config: Config): string {
   if (mode === "audit") {
     return `Audit all tags in the vault at ${config.vaultPath}. Write the report to _Tag Audit Report.md.`;
@@ -93,7 +163,13 @@ export function buildUserPrompt(mode: AgentMode, config: Config): string {
   if (mode === "plan") {
     return `Generate a tag migration plan based on the audit report. Write the plan to _Tag Migration Plan.md. Batch size for execution will be ${config.batchSize}.`;
   }
-  throw new Error(`Mode "${mode}" is not yet implemented (Phase 3)`);
+  if (mode === "execute") {
+    return `Apply the tag migration plan to the vault at ${config.vaultPath}. Process up to ${config.batchSize} notes in this batch.`;
+  }
+  if (mode === "verify") {
+    return `Verify the tag migration in the vault at ${config.vaultPath}. Write the verification report to _Tag Migration Verification.md.`;
+  }
+  throw new Error(`Unknown mode: "${mode}"`);
 }
 
 // ============================================================================
@@ -150,8 +226,12 @@ async function runAgent(config: Config) {
     systemPrompt = buildAuditSystemPrompt(config);
   } else if (mode === "plan") {
     systemPrompt = buildPlanSystemPrompt(config);
+  } else if (mode === "execute") {
+    systemPrompt = buildExecuteSystemPrompt(config);
+  } else if (mode === "verify") {
+    systemPrompt = buildVerifySystemPrompt(config);
   } else {
-    throw new Error(`Mode "${mode}" is not yet implemented (Phase 3)`);
+    throw new Error(`Unknown mode: "${mode}"`);
   }
 
   const userPrompt = buildUserPrompt(mode, config);

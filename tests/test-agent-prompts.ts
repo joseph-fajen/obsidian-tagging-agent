@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { buildAuditSystemPrompt, buildPlanSystemPrompt, buildUserPrompt } from "../tagging-agent.js";
+import { buildAuditSystemPrompt, buildPlanSystemPrompt, buildExecuteSystemPrompt, buildVerifySystemPrompt, buildUserPrompt } from "../tagging-agent.js";
 import type { Config } from "../lib/config.js";
 
 const mockConfig: Config = {
@@ -67,6 +67,69 @@ describe("buildPlanSystemPrompt", () => {
   });
 });
 
+describe("buildExecuteSystemPrompt", () => {
+  const prompt = buildExecuteSystemPrompt(mockConfig);
+
+  test("references migration plan as input", () => {
+    expect(prompt).toContain("_Tag Migration Plan.md");
+  });
+
+  test("contains key tool instructions", () => {
+    expect(prompt).toContain("apply_tag_changes");
+    expect(prompt).toContain("git_commit");
+    expect(prompt).toContain("read_note");
+  });
+
+  test("includes batch size from config", () => {
+    expect(prompt).toContain("50");
+  });
+
+  test("instructs to skip already-processed notes", () => {
+    expect(prompt).toContain("skip");
+  });
+
+  test("includes today's date", () => {
+    const today = new Date().toISOString().split("T")[0];
+    expect(prompt).toContain(today);
+  });
+
+  test("states plan-only constraint", () => {
+    expect(prompt).toContain("ONLY the changes specified");
+  });
+});
+
+describe("buildVerifySystemPrompt", () => {
+  const prompt = buildVerifySystemPrompt(mockConfig);
+
+  test("references verification report output", () => {
+    expect(prompt).toContain("_Tag Migration Verification.md");
+  });
+
+  test("contains key tool instructions", () => {
+    expect(prompt).toContain("list_notes");
+    expect(prompt).toContain("read_note");
+    expect(prompt).toContain("write_note");
+    expect(prompt).toContain("git_commit");
+  });
+
+  test("instructs minimal detail for budget efficiency", () => {
+    expect(prompt).toContain('"minimal"');
+  });
+
+  test("states READ-ONLY constraint", () => {
+    expect(prompt).toContain("READ-ONLY");
+  });
+
+  test("includes today's date", () => {
+    const today = new Date().toISOString().split("T")[0];
+    expect(prompt).toContain(today);
+  });
+
+  test("instructs to exclude agent artifact notes", () => {
+    expect(prompt).toContain("prefixed with _");
+  });
+});
+
 describe("buildUserPrompt", () => {
   test("returns correct prompt for audit mode", () => {
     const prompt = buildUserPrompt("audit", mockConfig);
@@ -81,11 +144,15 @@ describe("buildUserPrompt", () => {
     expect(prompt).toContain("50");
   });
 
-  test("throws for execute mode (Phase 3)", () => {
-    expect(() => buildUserPrompt("execute", mockConfig)).toThrow("not yet implemented");
+  test("returns correct prompt for execute mode", () => {
+    const prompt = buildUserPrompt("execute", mockConfig);
+    expect(prompt).toContain("migration plan");
+    expect(prompt).toContain("50");
   });
 
-  test("throws for verify mode (Phase 3)", () => {
-    expect(() => buildUserPrompt("verify", mockConfig)).toThrow("not yet implemented");
+  test("returns correct prompt for verify mode", () => {
+    const prompt = buildUserPrompt("verify", mockConfig);
+    expect(prompt).toContain("Verify");
+    expect(prompt).toContain("_Tag Migration Verification.md");
   });
 });
