@@ -5,7 +5,11 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(bun install)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebSearch",
+      "Bash(cat:*)",
+      "Bash(bun add:*)"
     ]
   }
 }
