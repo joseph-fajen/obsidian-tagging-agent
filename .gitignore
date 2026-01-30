@@ -1,0 +1,19 @@
+# Environment
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# Output
+reports/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
