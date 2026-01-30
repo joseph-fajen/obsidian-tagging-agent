@@ -121,8 +121,7 @@ The MVP goal is a working agent that can run the full audit-plan-execute-verify 
 │                                              │
 │  Tools:                                      │
 │  ├── list_notes      (read vault index)      │
-│  ├── read_note       (read single note)      │
-│  ├── read_tags       (extract tags from note)│
+│  ├── read_note       (read note + classify tags)│
 │  ├── search_notes    (find notes by tag/text)│
 │  ├── write_note      (write/update note)     │
 │  ├── apply_tag_changes (structured retag)    │
@@ -148,9 +147,9 @@ The MVP goal is a working agent that can run the full audit-plan-execute-verify 
 claude-agent-sdk-proactive-agent/
 ├── tagging-agent.ts          # Main entry point for tagging agent
 ├── tools/
-│   ├── vault-tools.ts        # MCP tool definitions (list, read, write, search)
-│   ├── tag-tools.ts          # Tag-specific tools (read_tags, apply_tag_changes)
-│   └── git-tools.ts          # Git commit tool
+│   ├── vault-tools.ts        # MCP tool definitions (list_notes, read_note, search_notes, write_note)
+│   ├── tag-tools.ts          # Tag-specific tools (apply_tag_changes)
+│   └── git-tools.ts          # Git commit tool (git_commit)
 ├── lib/
 │   ├── frontmatter.ts        # gray-matter wrapper for safe YAML parsing
 │   ├── tag-parser.ts         # Extract inline tags and frontmatter tags
@@ -169,57 +168,131 @@ claude-agent-sdk-proactive-agent/
 - **MCP tool boundary:** All vault access goes through MCP tools. The agent's system prompt instructs it on which tools to use and in what order. The tools enforce safe operations (e.g., `apply_tag_changes` validates tag format before writing).
 - **Vault-native reporting:** All intermediate and final artifacts are markdown notes written to the vault, prefixed with `_` to sort them to the top.
 - **Git checkpoint pattern:** Before any write operation batch, the agent commits current state. After the batch, it commits again. This creates clean, revertable diffs.
+- **Agent-optimized tool docstrings:** All MCP tool implementations must follow the docstring template defined in `reference/adding_tools_guide.md`. This means every tool includes: a one-line summary, "Use this when" affirmative guidance, "Do NOT use this for" negative guidance, args with WHY guidance, returns with format details, performance notes (token costs, execution time, limits), and 2-4 realistic examples. Tool docstrings are the contract between deterministic tools and non-deterministic agents — clear contracts yield better agent performance.
+- **Tool consolidation:** Prefer consolidated tools over fragmented ones. When multiple low-level operations can be combined, expose a single tool with a parameter controlling scope or detail level, rather than forcing the agent to orchestrate multiple calls.
 
 ## 7. Tools / Features
 
 ### MCP Tool Specifications
 
+> **Implementation note:** All tool implementations must follow the agent-optimized docstring template in `reference/adding_tools_guide.md`. The specifications below define the tool contracts; the implementation must additionally include "Use this when" / "Do NOT use this for" guidance, performance notes, and realistic examples as described in the guide.
+
 #### `list_notes`
-- **Purpose:** Get an index of all markdown notes in the vault
+- **Summary:** Get an index of all markdown notes in the vault.
+- **Use this when:**
+  - Starting an audit phase and need to enumerate all notes
+  - Checking how many notes exist in a subdirectory before batch processing
+  - Building a worklist for the execute phase
+- **Do NOT use this for:**
+  - Reading note content (use `read_note` instead)
+  - Finding notes by tag or text (use `search_notes` instead)
 - **Input:** `{ path?: string, recursive?: boolean }`
-- **Output:** Array of `{ path: string, hasfrontmatter: boolean, tagCount: number }`
-- **Key features:** Optionally filter by subdirectory. Returns metadata summary without reading full content.
+- **Output:** Array of `{ path: string, hasFrontmatter: boolean, tagCount: number }`
+- **Performance notes:** Returns lightweight metadata only (~20 tokens per note). Full vault scan (~884 notes) returns ~17K tokens. Filter by `path` to reduce scope.
+- **Examples:**
+  - `list_notes({ recursive: true })` — full vault inventory for audit
+  - `list_notes({ path: "Archive/", recursive: true })` — scope to Archive folder for a batch
 
 #### `read_note`
-- **Purpose:** Read a single note's full content
-- **Input:** `{ path: string }`
-- **Output:** `{ path: string, frontmatter: object, content: string, inlineTags: string[], frontmatterTags: string[] }`
-- **Key features:** Parses frontmatter separately from body content. Extracts both tag types.
+- **Summary:** Read a single note's content with parsed frontmatter and classified tags.
+- **Use this when:**
+  - Need to view a specific note's content, frontmatter, or tags
+  - Checking a note's current tag state before or after migration
+  - Verifying frontmatter integrity after a write operation
+- **Do NOT use this for:**
+  - Finding notes by tag or text pattern (use `search_notes`)
+  - Enumerating notes in a directory (use `list_notes`)
+  - Applying tag changes (use `apply_tag_changes`)
+- **Input:** `{ path: string, detail?: "minimal" | "standard" | "full" }`
+  - `"minimal"`: Path, frontmatter tags, inline tags, noise tags only (~50 tokens). Use for metadata checks and audit counting.
+  - `"standard"` (default): Above + first 200 chars of body content (~150 tokens). Good for verification passes.
+  - `"full"`: Complete note content with all frontmatter fields (~500-2000 tokens). Use only when body content analysis is needed.
+- **Output:** `{ path: string, frontmatter: object, content: string, frontmatterTags: string[], inlineTags: string[], allTags: string[], noiseTags: string[] }`
+  - `noiseTags` includes Google Docs anchors (`#heading=h.xxxxx`), `#follow-up-required-*`, and other identified noise patterns.
+- **Performance notes:** Minimal detail ~50 tokens; standard ~150 tokens; full ~500-2000 tokens depending on note length. For audit phase scanning all 884 notes, use `"minimal"` to stay under budget.
+- **Examples:**
+  - `read_note({ path: "daily/2025-01-15.md", detail: "minimal" })` — audit: count tags
+  - `read_note({ path: "Projects/Blockfrost API.md", detail: "standard" })` — verify after migration
+  - `read_note({ path: "Proposed Tagging System.md", detail: "full" })` — read scheme definition
 
-#### `read_tags`
-- **Purpose:** Extract and classify all tags from a note
-- **Input:** `{ path: string }`
-- **Output:** `{ frontmatterTags: string[], inlineTags: string[], allTags: string[], noiseTags: string[] }`
-- **Key features:** Identifies noise tags (Google Docs anchors, etc.) separately.
+> **Consolidation note:** This tool replaces the previously separate `read_note` and `read_tags` tools. The `detail` parameter controls verbosity, following the tool consolidation principle from the adding tools guide. Tag classification (including noise tag identification) is always included regardless of detail level.
 
 #### `search_notes`
-- **Purpose:** Find notes matching a tag or text pattern
+- **Summary:** Find notes matching a tag name, text pattern, or directory filter.
+- **Use this when:**
+  - Finding all notes that use a specific tag (e.g., audit frequency counting)
+  - Searching for notes containing specific text patterns
+  - Scoping a batch to notes matching certain criteria
+- **Do NOT use this for:**
+  - Reading a note you already know the path of (use `read_note`)
+  - Getting a full directory listing (use `list_notes`)
+  - Modifying notes (use `apply_tag_changes` or `write_note`)
 - **Input:** `{ tag?: string, text?: string, directory?: string }`
-- **Output:** Array of matching note paths with match context
-- **Key features:** Supports searching by tag name or body text. Useful for audit phase.
+  - At least one of `tag` or `text` is required.
+- **Output:** Array of `{ path: string, matchContext: string }` — paths with a short snippet showing where the match occurred.
+- **Performance notes:** Returns ~30 tokens per match. Tag search is indexed and fast (~50ms). Text search scans note bodies (~500ms for full vault). Combine with `directory` to reduce scan scope.
+- **Examples:**
+  - `search_notes({ tag: "heading" })` — find all notes with the noise tag
+  - `search_notes({ tag: "daily-reflection", directory: "Journal/" })` — scoped tag search
+  - `search_notes({ text: "follow-up-required" })` — find obsolete workflow tags in body text
 
 #### `write_note`
-- **Purpose:** Write or update a note (used for report generation)
+- **Summary:** Write or update a markdown note, used primarily for generating reports and audit artifacts.
+- **Use this when:**
+  - Writing audit reports, migration plans, or verification reports to the vault
+  - Creating new notes as agent artifacts (prefixed with `_`)
+  - Updating an existing report with new data
+- **Do NOT use this for:**
+  - Changing tags on a note (use `apply_tag_changes` — it handles inline removal + frontmatter updates atomically)
+  - Reading notes (use `read_note`)
 - **Input:** `{ path: string, content: string, frontmatter?: object }`
 - **Output:** `{ success: boolean, path: string }`
-- **Key features:** Safely serializes frontmatter. Creates parent directories if needed.
+- **Performance notes:** Write operation ~20ms. Creates parent directories if needed. Safely serializes frontmatter via gray-matter — preserves existing fields when `frontmatter` is provided.
+- **Examples:**
+  - `write_note({ path: "_Tag Audit Report.md", content: "# Tag Audit\n...", frontmatter: { tags: ["type/report"], date: "2026-01-30" } })`
+  - `write_note({ path: "_Tag Migration Plan.md", content: planMarkdown })`
 
 #### `apply_tag_changes`
-- **Purpose:** Apply a set of tag changes to a specific note
+- **Summary:** Apply a set of tag changes to a specific note — the core migration tool.
+- **Use this when:**
+  - Executing the migration plan on a note (renaming, removing, adding tags)
+  - Moving inline tags to YAML frontmatter
+  - Removing noise or obsolete tags
+- **Do NOT use this for:**
+  - Reading tags (use `read_note` with `detail: "minimal"`)
+  - Writing report notes (use `write_note`)
+  - Bulk operations across many notes in one call (call this per-note in a batch loop)
 - **Input:** `{ path: string, changes: Array<{ oldTag: string, newTag: string | null }> }`
-  - `newTag: null` means remove the tag
+  - `newTag: null` means remove the tag entirely
+  - `newTag: "status/pending"` means rename/remap to new scheme tag
 - **Output:** `{ success: boolean, path: string, tagsAdded: string[], tagsRemoved: string[], warnings: string[] }`
-- **Key features:**
-  - Removes inline tags from body text
-  - Adds new tags to YAML frontmatter
-  - Validates new tags match the scheme format (lowercase, kebab-case, valid prefix)
-  - Reports warnings for edge cases (tag not found, duplicate, etc.)
+- **Key behaviors:**
+  - Removes inline tags from body text (skipping code blocks)
+  - Adds new tags to YAML frontmatter `tags` array
+  - Creates frontmatter block if note has none
+  - Validates new tags match scheme format (lowercase, kebab-case, valid prefix)
+  - Deduplicates — if two old tags map to the same new tag, it's added once
+  - Reports warnings for edge cases (tag not found in note, duplicate after mapping, etc.)
+- **Performance notes:** ~30ms per note. Warnings array enables audit logging without failing the operation. Always check `warnings` in the response — a non-empty array doesn't mean failure but may indicate data worth reviewing.
+- **Examples:**
+  - `apply_tag_changes({ path: "Journal/2025-01-15.md", changes: [{ oldTag: "daily-reflection", newTag: "type/daily-note" }, { oldTag: "heading", newTag: null }] })`
+  - `apply_tag_changes({ path: "Projects/Plutus.md", changes: [{ oldTag: "todo", newTag: "status/pending" }, { oldTag: "research", newTag: "type/research" }] })`
 
 #### `git_commit`
-- **Purpose:** Create a git commit in the vault repo
+- **Summary:** Create a git commit in the vault repo for rollback safety.
+- **Use this when:**
+  - Before starting a batch of tag changes (checkpoint)
+  - After completing a batch of tag changes (save point)
+  - After writing a report or plan note
+- **Do NOT use this for:**
+  - Reading git history or status (not supported — use the agent's Bash tool if needed)
+  - Reverting changes (manual operation, outside agent scope)
 - **Input:** `{ message: string }`
 - **Output:** `{ success: boolean, commitHash: string }`
-- **Key features:** Stages all changes in vault, commits with provided message.
+- **Performance notes:** ~200ms. Stages all changes in the vault directory before committing. Commit messages should be descriptive, e.g., "Tag migration batch 3/18: Archive/Projects notes".
+- **Examples:**
+  - `git_commit({ message: "Pre-migration checkpoint: audit complete" })`
+  - `git_commit({ message: "Tag migration batch 1/18: daily journal notes (50 notes)" })`
 
 ## 8. Technology Stack
 
@@ -443,6 +516,7 @@ The agent can complete a full audit-plan-execute-verify lifecycle on the vault, 
 - **Vault Tag Analysis:** Referenced in the proposed system note (linked note in vault)
 - **Claude Agent SDK docs:** `@anthropic-ai/claude-agent-sdk` v0.2.22
 - **Agent SDK demo files:** `demo/mcp-servers.ts`, `demo/hooks.ts`, `demo/sessions.ts`
+- **Tool docstring guide:** `reference/adding_tools_guide.md` — required template for all MCP tool implementations (agent-optimized docstrings with affirmative/negative guidance, performance notes, and examples)
 
 ### Vault Statistics (as of audit)
 | Metric | Value |
