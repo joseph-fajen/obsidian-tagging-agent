@@ -65,6 +65,20 @@ describe("buildPlanSystemPrompt", () => {
   test("states REVIEW-ONLY constraint", () => {
     expect(prompt).toContain("REVIEW-ONLY");
   });
+
+  test("contains worklist generation instructions", () => {
+    expect(prompt).toContain("Machine-Parseable Worklist");
+  });
+
+  test("specifies worklist JSON schema", () => {
+    expect(prompt).toContain('"worklist"');
+    expect(prompt).toContain('"unmappedTags"');
+  });
+
+  test("instructs scanning all tagged notes", () => {
+    expect(prompt).toContain("list_notes");
+    expect(prompt).toContain("read_note");
+  });
 });
 
 describe("buildExecuteSystemPrompt", () => {
@@ -95,6 +109,22 @@ describe("buildExecuteSystemPrompt", () => {
 
   test("states plan-only constraint", () => {
     expect(prompt).toContain("ONLY the changes specified");
+  });
+
+  test("references progress file", () => {
+    expect(prompt).toContain("_Migration_Progress.json");
+  });
+
+  test("references Machine-Parseable Worklist section", () => {
+    expect(prompt).toContain("Machine-Parseable Worklist");
+  });
+
+  test("forbids search_notes usage", () => {
+    expect(prompt).toContain("search_notes");
+  });
+
+  test("forbids Bash usage", () => {
+    expect(prompt).toContain("Bash");
   });
 });
 
@@ -127,6 +157,19 @@ describe("buildVerifySystemPrompt", () => {
 
   test("instructs to exclude agent artifact notes", () => {
     expect(prompt).toContain("prefixed with _");
+  });
+
+  test("recognizes flat topic tags as valid", () => {
+    expect(prompt).toContain("Flat topic tags");
+  });
+
+  test("flags purely numeric tags as invalid", () => {
+    expect(prompt).toContain("numeric");
+  });
+
+  test("lists both valid tag formats", () => {
+    expect(prompt).toContain("Prefixed tags");
+    expect(prompt).toContain("Flat topic tags");
   });
 });
 

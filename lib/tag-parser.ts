@@ -18,12 +18,13 @@ export function extractInlineTags(content: string): string[] {
   const tags: string[] = [];
   let match: RegExpExecArray | null;
   while ((match = INLINE_TAG_RE.exec(cleaned)) !== null) {
-    tags.push(match[1]);
+    tags.push(match[1].toLowerCase());
   }
   return tags;
 }
 
 export function isNoiseTag(tag: string): boolean {
+  if (/^\d+$/.test(tag)) return true;
   if (tag === "heading") return true;
   if (tag.includes("=")) return true;
   if (/^follow-up-required-/.test(tag)) return true;
@@ -95,7 +96,7 @@ export function removeInlineTag(content: string, tag: string): string {
   }
 
   const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const tagRemoveRe = new RegExp(`(^|\\s)#${escapedTag}(?=\\s|$|[.,;:!?)])`, "g");
+  const tagRemoveRe = new RegExp(`(^|\\s)#${escapedTag}(?=\\s|$|[.,;:!?)])`, "gi");
 
   return segments
     .map((seg) => {

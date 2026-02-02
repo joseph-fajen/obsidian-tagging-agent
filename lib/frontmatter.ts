@@ -26,8 +26,11 @@ export function serializeFrontmatter(
 export function getFrontmatterTags(data: Record<string, unknown>): string[] {
   const tags = data.tags;
   if (tags == null) return [];
-  if (typeof tags === "string") return [tags];
-  if (Array.isArray(tags)) return tags.filter((t): t is string => typeof t === "string");
+  if (typeof tags === "string") return [tags.replace(/^#/, "")];
+  if (Array.isArray(tags))
+    return tags
+      .filter((t): t is string => typeof t === "string")
+      .map((t) => t.replace(/^#/, ""));
   return [];
 }
 

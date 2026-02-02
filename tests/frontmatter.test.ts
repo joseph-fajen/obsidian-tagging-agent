@@ -80,6 +80,18 @@ describe("getFrontmatterTags", () => {
   test("returns empty array when tags null", () => {
     expect(getFrontmatterTags({ tags: null })).toEqual([]);
   });
+
+  test("strips # prefix from array tags", () => {
+    expect(getFrontmatterTags({ tags: ["#project-catalyst", "blockfrost", "#api"] })).toEqual([
+      "project-catalyst",
+      "blockfrost",
+      "api",
+    ]);
+  });
+
+  test("strips # prefix from single string tag", () => {
+    expect(getFrontmatterTags({ tags: "#single-tag" })).toEqual(["single-tag"]);
+  });
 });
 
 describe("setFrontmatterTags", () => {

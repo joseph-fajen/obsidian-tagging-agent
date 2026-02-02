@@ -43,6 +43,14 @@ describe("extractInlineTags", () => {
     const tags = extractInlineTags("some text #end-tag");
     expect(tags).toContain("end-tag");
   });
+
+  test("normalizes extracted tags to lowercase", () => {
+    const tags = extractInlineTags("Text #Plutus-docs-design and #AI-TOOLS here");
+    expect(tags).toContain("plutus-docs-design");
+    expect(tags).toContain("ai-tools");
+    expect(tags).not.toContain("Plutus-docs-design");
+    expect(tags).not.toContain("AI-TOOLS");
+  });
 });
 
 describe("isNoiseTag", () => {
@@ -62,6 +70,18 @@ describe("isNoiseTag", () => {
   test("does not flag normal tags as noise", () => {
     expect(isNoiseTag("daily-reflection")).toBe(false);
     expect(isNoiseTag("status/pending")).toBe(false);
+  });
+
+  test("identifies purely numeric tags as noise", () => {
+    expect(isNoiseTag("1")).toBe(true);
+    expect(isNoiseTag("123")).toBe(true);
+    expect(isNoiseTag("2025")).toBe(true);
+  });
+
+  test("does not flag alphanumeric tags as noise", () => {
+    expect(isNoiseTag("tag1")).toBe(false);
+    expect(isNoiseTag("v2")).toBe(false);
+    expect(isNoiseTag("2025-01-15")).toBe(false);
   });
 });
 
@@ -136,5 +156,19 @@ describe("removeInlineTag", () => {
   test("does not leave double spaces", () => {
     const result = removeInlineTag("word #tag next", "tag");
     expect(result).not.toContain("  ");
+  });
+
+  test("removes tag regardless of case", () => {
+    const result = removeInlineTag("Some text #Plutus-docs-design more text", "plutus-docs-design");
+    expect(result).not.toContain("#Plutus-docs-design");
+    expect(result).toContain("Some text");
+    expect(result).toContain("more text");
+  });
+
+  test("removes multiple case variations", () => {
+    const result = removeInlineTag("#Tag1 and #TAG1 and #tag1", "tag1");
+    expect(result).not.toContain("#Tag1");
+    expect(result).not.toContain("#TAG1");
+    expect(result).not.toContain("#tag1");
   });
 });
