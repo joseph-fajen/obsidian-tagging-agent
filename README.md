@@ -4,6 +4,10 @@ An AI agent that audits, plans, and executes a comprehensive tag migration acros
 
 The agent migrates ~884 markdown notes from inconsistent, flat tagging (mixed inline `#tags` and YAML frontmatter, duplicate names, noise from Google Docs) to a clean hierarchical scheme with `status/`, `type/`, `area/`, `project/` prefixes — all in YAML frontmatter.
 
+## Running the Agent
+
+This agent is designed to run directly via Bun, not through Claude Code or another orchestration layer. It has its own system prompts, budget controls, and autonomous execution — running it directly gives you cleaner output and direct cost control.
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) installed
@@ -98,7 +102,11 @@ Each invocation respects `MAX_BUDGET_USD`. Typical costs:
 | Execute (per batch of 50) | ~$0.20-0.40 (read + apply per note) |
 | Verify | ~$0.30-0.50 (reads all notes at minimal detail) |
 
-Start conservative. You can always increase `MAX_BUDGET_USD` if the agent runs out of budget mid-phase.
+Start conservative. You can always increase `MAX_BUDGET_USD` if the agent runs out of budget mid-phase. Override per-invocation without editing `.env`:
+
+```bash
+MAX_BUDGET_USD=2.50 bun run tagging-agent.ts audit
+```
 
 ## Project Structure
 
