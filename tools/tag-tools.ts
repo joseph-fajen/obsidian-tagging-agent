@@ -57,9 +57,12 @@ Examples:
         const fullPath = safePath(vaultPath, notePath);
         const raw = await readFile(fullPath, "utf-8");
 
-        // Skip Templater template files (unparseable YAML due to nested quotes)
-        if (raw.includes("<%") && raw.includes("%>")) {
-          return errorResult(`Cannot process template file (contains Templater syntax): ${notePath}`);
+        // Skip files with Templater syntax IN THE FRONTMATTER (unparseable YAML)
+        // Files with Templater in body only are safe to process
+        const frontmatterMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+        const frontmatterContent = frontmatterMatch?.[1] || "";
+        if (frontmatterContent.includes("<%") && frontmatterContent.includes("%>")) {
+          return errorResult(`Cannot process: Templater syntax in frontmatter: ${notePath}`);
         }
 
         const parsed = parseFrontmatter(raw);

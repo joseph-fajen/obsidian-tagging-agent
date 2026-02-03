@@ -2,7 +2,7 @@
 
 An AI agent that audits, plans, and executes a comprehensive tag migration across an Obsidian vault. Built with the Claude Agent SDK and Bun.
 
-The agent migrates ~884 markdown notes from inconsistent, flat tagging (mixed inline `#tags` and YAML frontmatter, duplicate names, noise from Google Docs) to a clean hierarchical scheme with `status/`, `type/`, `area/`, `project/` prefixes — all in YAML frontmatter.
+The agent migrates ~884 markdown notes from inconsistent, flat tagging (mixed inline `#tags` and YAML frontmatter, duplicate names, noise from Google Docs) to a clean hierarchical scheme with `status/`, `type/`, `area/`, `project/`, `topic/`, `tool/`, `skill/` prefixes — all in YAML frontmatter.
 
 ## Running the Agent
 
@@ -32,7 +32,11 @@ AGENT_MODEL="claude-sonnet-4-20250514"
 
 ## Usage
 
-The agent runs in four phases. Each phase is a separate CLI invocation. **Run them in order** and review the output between each phase.
+The agent runs in five steps: four LLM-powered phases plus one deterministic code step. Each is a separate CLI invocation. **Run them in order** and review the output between each step.
+
+```
+audit (LLM) → plan (LLM) → generate-worklist (CODE) → execute (LLM) → verify (LLM)
+```
 
 ### Phase 1: Audit
 
@@ -71,6 +75,8 @@ bun run tagging-agent.ts generate-worklist
 
 This step is instant and free (no API calls).
 
+**Note:** Templater template files (with `<% %>` syntax in the YAML frontmatter) are automatically skipped — their YAML is unparseable until expanded. Daily notes with Templater cursor placeholders in the body are processed normally.
+
 ### Phase 3: Execute
 
 Applies the migration plan in batches. Each invocation processes up to `BATCH_SIZE` notes (default 50), with git commits before and after each batch.
@@ -103,6 +109,17 @@ git log --oneline    # find the commit to revert
 git revert <hash>    # undo a specific batch
 ```
 
+## Error Recovery
+
+The agent includes an error recovery system. When an error occurs, instead of immediately exiting, a lightweight recovery agent analyzes the error and recommends a strategy:
+
+- **retry** — Transient error, will retry automatically (up to 3 times)
+- **skip** — One item failed, suggests skipping and continuing
+- **ask_user** — Needs human judgment, presents a question
+- **abort** — Fundamental error, cannot recover
+
+This costs ~$0.05 per error analysis.
+
 ## Budget
 
 Each invocation respects `MAX_BUDGET_USD`. Typical costs:
@@ -125,16 +142,20 @@ MAX_BUDGET_USD=2.50 bun run tagging-agent.ts audit
 
 ```
 tagging-agent.ts          # Entry point — system prompts + agent runner
-tag-scheme.ts             # Tag scheme schemas + noise patterns
+tag-scheme.ts             # Tag scheme schemas + noise patterns + mappings
 lib/
   config.ts               # Environment variable loading
   frontmatter.ts          # gray-matter wrapper
   tag-parser.ts           # Inline tag extraction + validation
+  worklist-generator.ts   # Deterministic worklist generation (no LLM)
 tools/
   vault-tools.ts          # list_notes, read_note, search_notes, write_note
   tag-tools.ts            # apply_tag_changes
   git-tools.ts            # git_commit
 tests/                    # bun test files
+.agents/
+  plans/                  # Implementation plans (all marked IMPLEMENTED)
+  retrospectives/         # Session analysis docs
 reference/workshop/       # Original Claude Agent SDK workshop examples
 ```
 
@@ -148,4 +169,6 @@ bun test
 
 - `PRD.md` — Full requirements, tool specs, architecture, success criteria
 - `CLAUDE.md` — Coding conventions and project rules
-- `.agents/plans/` — Implementation plans for phases 1-3
+- `PROJECT_STATUS.md` — Current implementation state and known issues
+- `CHANGELOG.md` — Development history with architectural context
+- `.agents/plans/` — Implementation plans (each has status header showing if implemented)

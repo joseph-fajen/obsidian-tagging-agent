@@ -91,10 +91,12 @@ export async function generateWorklist(
       continue;
     }
 
-    // Skip Templater template files (contain unexpanded <% %> syntax)
-    // These have unparseable YAML due to nested quotes in expressions
-    if (raw.includes("<%") && raw.includes("%>")) {
-      warnings.push(`Skipping template file (contains Templater syntax): ${notePath}`);
+    // Skip files with Templater syntax IN THE FRONTMATTER (unparseable YAML)
+    // Files with Templater in body only (e.g., cursor placeholders) are safe to parse
+    const frontmatterMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    const frontmatterContent = frontmatterMatch?.[1] || "";
+    if (frontmatterContent.includes("<%") && frontmatterContent.includes("%>")) {
+      warnings.push(`Skipping: Templater syntax in frontmatter: ${notePath}`);
       notesSkipped++;
       continue;
     }

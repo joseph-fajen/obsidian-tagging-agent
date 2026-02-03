@@ -1,6 +1,12 @@
+---
+status: IMPLEMENTED
+implemented_date: 2026-01-31
+commit: f2a710b
+---
+
 # Feature: Deterministic Worklist Generator
 
-The following plan should be complete, but validate documentation and codebase patterns before implementing.
+The following plan has been implemented.
 
 Pay special attention to naming of existing utils, types, and models. Import from the right files.
 

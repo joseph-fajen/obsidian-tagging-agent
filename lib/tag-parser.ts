@@ -1,4 +1,4 @@
-const VALID_PREFIXES = ["status/", "type/", "area/", "project/"];
+const VALID_PREFIXES = ["area/", "project/", "skill/", "status/", "tool/", "topic/", "type/"];
 
 const FENCED_CODE_BLOCK_RE = /```[\s\S]*?```|~~~[\s\S]*?~~~/g;
 const INLINE_CODE_RE = /`[^`]+`/g;

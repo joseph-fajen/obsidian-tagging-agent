@@ -1,6 +1,12 @@
+---
+status: IMPLEMENTED
+implemented_date: 2026-01-31
+commit: 3ba8400
+---
+
 # Feature: Tagging Agent Post-Maiden-Voyage Improvements
 
-The following plan implements bug fixes, architectural improvements, and project cleanup identified in the maiden voyage retrospective. Pay special attention to the inline tag case-sensitivity fix (Bug 3) which has a second defect not covered in the original `BUG_FIXES.md`.
+The following plan has been implemented. It addressed bug fixes, architectural improvements, and project cleanup identified in the maiden voyage retrospective.
 
 ## Feature Description
 

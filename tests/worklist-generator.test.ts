@@ -51,6 +51,36 @@ beforeAll(async () => {
     join(testVaultPath, "_Tag Audit Report.md"),
     `---\ntags:\n  - type/report\n---\n# Audit\n`,
   );
+
+  // Note 8: File with Templater in body but valid frontmatter (should be processed)
+  await writeFile(
+    join(testVaultPath, "journal", "daily-with-cursor.md"),
+    `---
+created: '2025-01-31 09:35'
+tags:
+  - daily-reflection
+---
+# Daily Note
+
+Some content here
+- <% tp.file.cursor() %>
+`,
+  );
+
+  // Note 9: File with Templater in frontmatter (should be skipped)
+  await mkdir(join(testVaultPath, "templates"), { recursive: true });
+  await writeFile(
+    join(testVaultPath, "templates", "templater-frontmatter.md"),
+    `---
+created: '<% tp.date.now("YYYY-MM-DD") %>'
+tags:
+  - template
+---
+# Template
+
+This is a template.
+`,
+  );
 });
 
 afterAll(async () => {
@@ -62,7 +92,9 @@ describe("generateWorklist", () => {
     const result = await generateWorklist(testVaultPath);
 
     // Should scan all non-artifact notes
-    expect(result.stats.totalNotesScanned).toBe(6); // excludes _Tag Audit Report.md
+    // Notes: day1, day2, links, valid, empty, unknown, daily-with-cursor = 7
+    // Plus templater-frontmatter which is scanned but skipped due to Templater in frontmatter = 8
+    expect(result.stats.totalNotesScanned).toBe(8); // excludes _Tag Audit Report.md
 
     // Notes with changes: day1 (2 mappings), day2 (2 mappings), links (noise removal)
     expect(result.stats.notesWithChanges).toBeGreaterThanOrEqual(3);
@@ -108,6 +140,29 @@ describe("generateWorklist", () => {
       (w) => w.path === "_Tag Audit Report.md",
     );
     expect(artifactEntry).toBeUndefined();
+  });
+
+  test("processes files with Templater in body but valid frontmatter", async () => {
+    const result = await generateWorklist(testVaultPath);
+    // Should find the daily note with cursor placeholder in body
+    const dailyNote = result.worklist.worklist.find(
+      (w) => w.path === join("journal", "daily-with-cursor.md"),
+    );
+    expect(dailyNote).toBeDefined();
+    expect(dailyNote!.changes).toContainEqual({ oldTag: "daily-reflection", newTag: "type/daily-note" });
+  });
+
+  test("skips files with Templater in frontmatter", async () => {
+    const result = await generateWorklist(testVaultPath);
+    // Should NOT find the template file with Templater in frontmatter
+    const templateNote = result.worklist.worklist.find(
+      (w) => w.path === join("templates", "templater-frontmatter.md"),
+    );
+    expect(templateNote).toBeUndefined();
+    // Should have a warning about skipping it
+    const skippedWarning = result.warnings.find((w) => w.includes("templater-frontmatter.md"));
+    expect(skippedWarning).toBeDefined();
+    expect(skippedWarning).toContain("Templater syntax in frontmatter");
   });
 
   test("uses audit mappings as fallback", async () => {

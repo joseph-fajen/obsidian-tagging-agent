@@ -78,9 +78,15 @@ This file tracks the current development state for Claude Code context. It's the
 
 ### Open Issues
 
-1. **No technical enforcement of MCP-only tool access**
-   - `allowedTools` is set but SDK's `bypassPermissions` may override it
-   - Agent can still call Bash/Read if it chooses to ignore system prompt
+(None currently)
+
+### Documented Decisions
+
+1. **Pragmatic tool boundary (2026-02)**
+   - The SDK's `allowedTools` is not enforced with `bypassPermissions` ([SDK issue #115](https://github.com/anthropics/claude-agent-sdk-typescript/issues/115))
+   - Decision: Accept pragmatic use of Bash/Read for efficiency
+   - All vault *writes* still go through MCP tools for auditability
+   - Documented in CLAUDE.md and PRD.md
 
 ---
 

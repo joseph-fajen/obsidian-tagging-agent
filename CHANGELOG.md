@@ -4,6 +4,76 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-03: Post-Verification Improvements
+
+### Session Context
+
+Following the successful tag migration (99.7% compliance, $1.97 total cost), the verification phase identified three improvement opportunities:
+
+1. **Overly aggressive Templater skip** — ~280 daily notes were being skipped because they contained Templater cursor placeholders in the body, even though their frontmatter was valid YAML
+2. **Missing tag prefixes** — The audit discovered additional hierarchical prefixes (`topic/`, `tool/`, `skill/`) that the validator didn't recognize
+3. **Undocumented tool boundary** — The verify agent used Bash/Read despite the MCP-only design intent, revealing an SDK limitation
+
+### Solutions Implemented
+
+#### 1. Refined Templater Detection
+
+**Problem:** The Templater skip logic checked the entire file for `<%` and `%>`, causing valid daily notes with cursor placeholders (e.g., `<% tp.file.cursor() %>`) in the body to be skipped.
+
+**Solution:** Changed detection to only check the frontmatter region:
+```typescript
+const frontmatterMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+const frontmatterContent = frontmatterMatch?.[1] || "";
+if (frontmatterContent.includes("<%") && frontmatterContent.includes("%>")) {
+  // Skip only if Templater syntax is in frontmatter
+}
+```
+
+**Result:** Only 7 actual template files are now skipped (down from ~280).
+
+#### 2. Extended Tag Prefixes
+
+**Problem:** Tags like `topic/ai`, `tool/obsidian`, `skill/writing` were flagged as invalid format.
+
+**Solution:** Added `skill/`, `tool/`, `topic/` to `VALID_PREFIXES` in `lib/tag-parser.ts`:
+```typescript
+const VALID_PREFIXES = ["area/", "project/", "skill/", "status/", "tool/", "topic/", "type/"];
+```
+
+#### 3. Documented Tool Boundary Decision
+
+**Problem:** The SDK's `allowedTools` restriction doesn't work with `permissionMode: bypassPermissions`, meaning agents can call Bash/Read even when not listed.
+
+**Solution:** Documented this as an accepted architectural decision rather than a bug to fix:
+- Updated `CLAUDE.md` with tool boundary note
+- Updated `PRD.md` with SDK limitation reference
+- Updated `PROJECT_STATUS.md` to move from "Open Issues" to "Documented Decisions"
+
+**Rationale:** Enforcing via hooks adds complexity without clear benefit; all vault *writes* still go through auditable MCP tools.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/worklist-generator.ts` | Refined Templater detection to frontmatter-only |
+| `lib/tag-parser.ts` | Added `skill/`, `tool/`, `topic/` to VALID_PREFIXES |
+| `tools/tag-tools.ts` | Same Templater refinement |
+| `tests/worklist-generator.test.ts` | Added 2 tests for Templater handling |
+| `CLAUDE.md` | Added tool boundary documentation |
+| `PRD.md` | Added SDK limitation note |
+| `PROJECT_STATUS.md` | Moved open issue to documented decisions |
+
+### Tests Added
+
+- `processes files with Templater in body but valid frontmatter`
+- `skips files with Templater in frontmatter`
+
+### Commits
+
+- `e641424` feat: implement post-verification improvements and restructure project docs
+
+---
+
 ## 2026-02-03: Error Recovery & Templater Fix
 
 ### Session Context
@@ -26,8 +96,8 @@ After running `audit` and `plan` modes successfully, the `generate-worklist` com
 **Problem:** Files containing Templater syntax like `<% tp.date.now("YYYY-MM-DD-dddd") %>` have nested quotes that cause `gray-matter`'s YAML parser to throw.
 
 **Solution:** Added detection in two locations:
-- `lib/worklist-generator.ts:87-92` — Skip files containing `<%` and `%>` during worklist generation
-- `tools/tag-tools.ts:58-62` — Return error for template files in `apply_tag_changes`
+- `lib/worklist-generator.ts` — Skip files containing Templater syntax during worklist generation
+- `tools/tag-tools.ts` — Return error for template files in `apply_tag_changes`
 
 **Trade-off:** Template files are skipped entirely rather than partially processed. This is acceptable because templates are meant to be expanded by Templater before use.
 
@@ -35,7 +105,7 @@ After running `audit` and `plan` modes successfully, the `generate-worklist` com
 
 **Problem:** On any error, the agent called `process.exit(1)` without analysis or recovery attempt.
 
-**Solution:** Implemented `runWithRecovery()` wrapper in `tagging-agent.ts:593-710`:
+**Solution:** Implemented `runWithRecovery()` wrapper in `tagging-agent.ts`:
 
 ```
 Error occurs → Recovery agent analyzes → Recommends strategy → Act on recommendation
@@ -75,14 +145,14 @@ Recovery strategies:
 
 ### Results
 
-- `generate-worklist` now completes successfully (129 notes, 181 changes, 0.1s)
+- `generate-worklist` now completes successfully
 - Templater files skipped with clear warnings
 - Errors trigger self-reflection instead of immediate exit
 - Project state is documented for future sessions
 
 ### Commits
 
-- `[pending]` — These changes should be committed with message describing the fixes
+- `876b729` feat: add error recovery loop and fix Templater YAML parsing
 
 ---
 
@@ -121,6 +191,33 @@ New `generate-worklist` mode:
 ### Commits
 
 - `f2a710b` feat: implement deterministic worklist generator to replace LLM-driven worklist
+- `2795f10` docs: add deterministic worklist generator implementation plan
+
+---
+
+## 2026-01-31: Maiden Voyage Retrospective
+
+### Session Context
+
+First complete run of the tagging agent on the production vault (~884 notes).
+
+### Results
+
+- **Total cost:** $10.34
+- **Duration:** ~45 minutes (18 execute batches)
+- **Compliance:** 99.7% (3 violations found, all edge cases)
+- **Notes processed:** 620 (260 had no tags to migrate)
+
+### Issues Discovered
+
+1. **Worklist truncation** — Plan phase only sampled ~15 notes instead of all 620
+2. **Numeric tags not classified as noise** — Tags like `#1`, `#123` weren't removed
+3. **Hash prefix in frontmatter** — Some tags had `#` prefix that wasn't stripped
+4. **Case-sensitive tag removal** — `#Meeting-Notes` wasn't removed when searching for `meeting-notes`
+
+### Commits
+
+- `98c65f0` docs: add maiden voyage retrospective from first full vault migration
 
 ---
 
@@ -128,11 +225,7 @@ New `generate-worklist` mode:
 
 ### Session Context
 
-Maiden voyage revealed three bugs that caused manual intervention:
-
-1. Numeric inline tags (`#1`, `#123`) not classified as noise
-2. Frontmatter tags with `#` prefix not normalized
-3. Inline tag removal was case-sensitive
+Maiden voyage revealed three bugs that caused manual intervention.
 
 ### Solutions Implemented
 
@@ -144,17 +237,109 @@ Maiden voyage revealed three bugs that caused manual intervention:
 ### Commits
 
 - `3ba8400` fix: post-maiden-voyage bug fixes, prompt upgrades, and test infrastructure
+- `90edf32` docs: add post-maiden-voyage improvement plan and supporting analysis
 
 ---
 
-## Earlier History
+## 2026-01-30: Phase 3 — Execute & Verify Modes
 
-See `.agents/plans/` for detailed implementation plans:
-- `phase-1-foundation.md` — MCP tools
-- `phase-2-audit-plan-agent.md` — Agent entry point
-- `phase-3-execute-verify.md` — Execution loop
+### Session Context
+
+Implementation of the execution and verification phases to complete the agent lifecycle.
+
+### Features Implemented
+
+- **Execute mode:** Applies migration plan in batches with git commits
+- **Verify mode:** Full-vault compliance scan with report generation
+- **Progress tracking:** `_Migration_Progress.json` tracks processed notes across invocations
+- **Worklist validation:** Checks for empty/truncated worklists before processing
+
+### Commits
+
+- `4480214` feat: implement phase 3 — execute & verify agent modes
+- `f19d551` feat: add phase 3 execute & verify implementation plan
+
+---
+
+## 2026-01-30: Phase 2 — Audit & Plan Agent
+
+### Session Context
+
+Implementation of the core agent entry point with system prompts for audit and plan modes.
+
+### Features Implemented
+
+- **`tagging-agent.ts`:** Main entry point with mode-specific system prompts
+- **`tag-scheme.ts`:** Tag scheme schemas and validation with Zod
+- **Audit mode:** Catalogs all tags, frequencies, and classifications
+- **Plan mode:** Generates migration plan with tag mapping table
+- **Budget controls:** `maxBudgetUsd` per invocation
+
+### Commits
+
+- `2d98af2` feat: implement phase 2 — tag scheme module, system prompts, and agent entry point
+- `daefa10` feat: add phase 2 audit & plan agent implementation plan
+
+---
+
+## 2026-01-29: Phase 1 — Foundation
+
+### Session Context
+
+Initial implementation of the core infrastructure: MCP tools and utility libraries.
+
+### Features Implemented
+
+#### MCP Tools (`tools/`)
+- `list_notes` — Vault inventory with metadata
+- `read_note` — Note reading with detail levels (minimal/standard/full)
+- `search_notes` — Tag and text search
+- `write_note` — Report/artifact writing
+- `apply_tag_changes` — Atomic tag migration per note
+- `git_commit` — Checkpoint commits
+
+#### Libraries (`lib/`)
+- `config.ts` — Environment variable loading
+- `frontmatter.ts` — gray-matter wrapper for YAML parsing
+- `tag-parser.ts` — Inline tag extraction, noise detection, validation
+
+### Commits
+
+- `25ae891` feat: implement phase 1 foundation — lib utilities, MCP tools, and unit tests
+- `8cef1d7` feat: add phase 1 foundation plan and gray-matter dependency
+
+---
+
+## 2026-01-29: Project Setup
+
+### Session Context
+
+Initial project setup and documentation.
+
+### Features Implemented
+
+- **`PRD.md`:** Full requirements document with tool specifications
+- **`CLAUDE.md`:** Project rules and conventions for Claude Code
+- **`.env.example`:** Environment variable reference
+- Reorganized from workshop template to tagging agent structure
+
+### Commits
+
+- `af6a406` docs: add CLAUDE.md and align PRD tool specs with adding_tools_guide
+- `2ae3ff4` feat: add PRD and reorganize project for Obsidian tagging agent
+- `9aba0ef` Initial commit from dynamous-community/workshops
+
+---
+
+## Reference Documents
+
+### Implementation Plans (`.agents/plans/`)
+- `phase-1-foundation.md` — MCP tools and libraries
+- `phase-2-audit-plan-agent.md` — Agent entry point and prompts
+- `phase-3-execute-verify.md` — Execution and verification
 - `deterministic-worklist-generator.md` — Code-based worklist
-- `post-maiden-voyage-improvements.md` — Bug fixes and improvements
+- `post-maiden-voyage-improvements.md` — Bug fixes
+- `post-verification-improvements.md` — Templater and prefix fixes
 
-See `.agents/retrospectives/` for session analysis:
+### Retrospectives (`.agents/retrospectives/`)
 - `maiden-voyage-2026-01-31.md` — First full run analysis
