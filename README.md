@@ -59,6 +59,18 @@ bun run tagging-agent.ts plan
 
 This phase is read-only. Edit the plan note directly in Obsidian if you want to change any mappings before executing.
 
+### Phase 2.5: Generate Worklist
+
+Produces the machine-parseable per-note worklist deterministically from code (no LLM call, no API cost). Reads every note, applies the tag mapping table, and appends the complete worklist JSON to the plan note.
+
+```bash
+bun run tagging-agent.ts generate-worklist
+```
+
+**Review:** Check the output — it reports how many notes need changes and any unmapped tags. If there are unmapped tags, resolve them in the mapping table (`tag-scheme.ts`) or `_Tag Audit Data.json` before executing.
+
+This step is instant and free (no API calls).
+
 ### Phase 3: Execute
 
 Applies the migration plan in batches. Each invocation processes up to `BATCH_SIZE` notes (default 50), with git commits before and after each batch.
@@ -98,6 +110,7 @@ Each invocation respects `MAX_BUDGET_USD`. Typical costs:
 | Phase | Estimate |
 |-------|----------|
 | Audit | ~$0.30-0.50 (reads all 884 notes at minimal detail) |
+| Generate Worklist | $0.00 (no LLM) |
 | Plan | ~$0.30-0.50 (reads audit report + scheme, writes plan) |
 | Execute (per batch of 50) | ~$0.20-0.40 (read + apply per note) |
 | Verify | ~$0.30-0.50 (reads all notes at minimal detail) |

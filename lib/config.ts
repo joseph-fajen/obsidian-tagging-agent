@@ -1,4 +1,4 @@
-export type AgentMode = "audit" | "plan" | "execute" | "verify";
+export type AgentMode = "audit" | "plan" | "generate-worklist" | "execute" | "verify";
 
 export interface Config {
   vaultPath: string;
@@ -8,7 +8,7 @@ export interface Config {
   agentModel: string;
 }
 
-const VALID_MODES: AgentMode[] = ["audit", "plan", "execute", "verify"];
+const VALID_MODES: AgentMode[] = ["audit", "plan", "generate-worklist", "execute", "verify"];
 
 export function loadConfig(): Config {
   const vaultPath = process.env.VAULT_PATH;

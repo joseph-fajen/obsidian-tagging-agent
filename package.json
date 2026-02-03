@@ -8,6 +8,7 @@
     "tagging:audit": "bun run tagging-agent.ts audit",
     "tagging:plan": "bun run tagging-agent.ts plan",
     "tagging:execute": "bun run tagging-agent.ts execute",
+    "tagging:generate-worklist": "bun run tagging-agent.ts generate-worklist",
     "tagging:verify": "bun run tagging-agent.ts verify"
   },
   "dependencies": {

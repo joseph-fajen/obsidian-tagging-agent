@@ -58,26 +58,26 @@ describe("buildPlanSystemPrompt", () => {
     expect(prompt).toContain("git_commit");
   });
 
-  test("includes batch size from config", () => {
-    expect(prompt).toContain("50");
-  });
-
   test("states REVIEW-ONLY constraint", () => {
     expect(prompt).toContain("REVIEW-ONLY");
   });
 
-  test("contains worklist generation instructions", () => {
-    expect(prompt).toContain("Machine-Parseable Worklist");
+  test("contains next steps with generate-worklist instruction", () => {
+    expect(prompt).toContain("generate-worklist");
   });
 
-  test("specifies worklist JSON schema", () => {
-    expect(prompt).toContain('"worklist"');
-    expect(prompt).toContain('"unmappedTags"');
+  test("mentions unmapped tags", () => {
+    expect(prompt).toContain("UNMAPPED");
+    expect(prompt).toContain("Unmapped Tags");
   });
 
   test("instructs scanning all tagged notes", () => {
     expect(prompt).toContain("list_notes");
     expect(prompt).toContain("read_note");
+  });
+
+  test("does NOT contain worklist JSON schema (moved to code)", () => {
+    expect(prompt).not.toContain('"totalChanges"');
   });
 });
 
@@ -125,6 +125,10 @@ describe("buildExecuteSystemPrompt", () => {
 
   test("forbids Bash usage", () => {
     expect(prompt).toContain("Bash");
+  });
+
+  test("includes worklist validation step", () => {
+    expect(prompt).toContain("Validate Worklist");
   });
 });
 
@@ -191,6 +195,11 @@ describe("buildUserPrompt", () => {
     const prompt = buildUserPrompt("execute", mockConfig);
     expect(prompt).toContain("migration plan");
     expect(prompt).toContain("50");
+  });
+
+  test("returns correct prompt for generate-worklist mode", () => {
+    const prompt = buildUserPrompt("generate-worklist", mockConfig);
+    expect(prompt).toContain("worklist");
   });
 
   test("returns correct prompt for verify mode", () => {

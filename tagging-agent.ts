@@ -4,6 +4,9 @@ import { createVaultTools } from "./tools/vault-tools.js";
 import { createTagTools } from "./tools/tag-tools.js";
 import { createGitTools } from "./tools/git-tools.js";
 import { SCHEME_NOTE_PATH } from "./tag-scheme.js";
+import { generateWorklist, loadAuditMappings, formatWorklistMarkdown } from "./lib/worklist-generator.js";
+import { join } from "path";
+import { readFile, writeFile } from "fs/promises";
 
 // ============================================================================
 // SYSTEM PROMPTS
@@ -38,7 +41,26 @@ Your task is to perform a comprehensive audit of every tag in the vault and prod
    - Noise tags list with counts
    - Unmapped tags list with counts and suggested categorization
    - Classification breakdown (mapped, unmapped, noise counts)
-7. Call git_commit({ message: "Audit complete: _Tag Audit Report.md" }) after writing the report.
+7. Write structured audit data for the worklist generator:
+   write_note({
+     path: "_Tag Audit Data.json",
+     content: JSON.stringify({
+       generatedAt: "<ISO-8601 timestamp>",
+       generatedBy: "audit-phase-agent",
+       totalNotes: <number>,
+       totalTaggedNotes: <number>,
+       uniqueTags: <number>,
+       mappings: {
+         // Include ONLY tags you have HIGH CONFIDENCE about mapping
+         // and that are NOT already in the hardcoded TAG_MAPPINGS table.
+         // Format: "old-tag-name": "new-tag-or-null"
+       },
+       tagFrequencies: {
+         // ALL tags found with their counts: "tag-name": count
+       }
+     }, null, 2)
+   })
+8. Call git_commit({ message: "Audit complete: _Tag Audit Report.md" }) after writing the report and data file.
 
 ## Constraints
 
@@ -53,7 +75,9 @@ export function buildPlanSystemPrompt(config: Config): string {
 
   return `You are a tag migration planning agent for an Obsidian vault. Today's date is ${today}.
 
-Your task is to create a complete, machine-executable migration plan. This phase is REVIEW-ONLY — do NOT apply any changes to notes, only write the plan note.
+Your task is to create a human-readable migration plan with a tag mapping table. This phase is REVIEW-ONLY — do NOT apply any changes to notes, only write the plan note.
+
+IMPORTANT: You do NOT need to generate the per-note worklist. That is done by a separate deterministic code step (generate-worklist) after you write the plan. Your job is to produce the TAG MAPPING TABLE and identify unmapped tags.
 
 ## Available Tools
 
@@ -77,78 +101,19 @@ Based on the audit and scheme, create a mapping for EVERY tag found in the audit
 |---------|---------|--------|-------|
 | \`daily-reflection\` | \`type/daily-note\` | MAP | Move to type hierarchy |
 | \`heading\` | (remove) | REMOVE | Noise tag |
-| \`technical-writing\` | \`technical-writing\` | CLEAN | Already valid topic tag |
+| \`technical-writing\` | \`technical-writing\` | KEEP | Already valid topic tag |
 | \`ai-tools\` | \`ai-tools\` | KEEP | Already valid, no change needed |
 | \`code_review\` | ? | UNMAPPED | Needs user decision |
 
 Action types:
 - **MAP**: Transform to new hierarchical tag
 - **REMOVE**: Delete entirely (noise/obsolete)
-- **CLEAN**: Remove # prefix only, keep tag name
 - **KEEP**: No change needed (already valid)
 - **UNMAPPED**: Cannot determine mapping, needs user input
 
-## Phase 3: Generate Per-Note Worklist (CRITICAL)
+## Phase 3: Write the Plan Note
 
-This is the most important step. You MUST generate a complete worklist of every note that needs changes.
-
-### Algorithm
-
-1. Call \`list_notes({ recursive: true })\` to get all notes
-2. For each note where \`tagCount > 0\`:
-   - Call \`read_note({ path: note.path, detail: "minimal" })\`
-   - For each tag in the note's \`allTags\` and \`noiseTags\`:
-     - Look up the tag in your mapping table
-     - If action is MAP or REMOVE: add to this note's changes array
-     - If action is CLEAN: add change with oldTag → cleaned version
-     - If action is KEEP: skip (no change needed)
-     - If action is UNMAPPED: add to unmappedTags list
-   - If note has any changes, add to worklist
-3. Build the JSON worklist structure
-
-### Worklist JSON Schema
-
-\`\`\`json
-{
-  "generatedAt": "ISO-8601 timestamp",
-  "schemeVersion": "1.0",
-  "generatedBy": "plan-phase-agent",
-  "totalNotes": 597,
-  "totalChanges": 1847,
-  "worklist": [
-    {
-      "path": "relative/path/to/note.md",
-      "changes": [
-        {
-          "oldTag": "tag-without-hash",
-          "newTag": "new-tag-or-null"
-        }
-      ]
-    }
-  ],
-  "unmappedTags": [
-    {
-      "tag": "unmapped-tag-name",
-      "occurrences": 3,
-      "notePaths": ["note1.md", "note2.md", "note3.md"],
-      "suggestedMapping": "optional-suggestion"
-    }
-  ]
-}
-\`\`\`
-
-### Important Rules for Worklist
-
-- Include ALL notes that need ANY changes
-- For each note, include ALL tag changes (not just one)
-- \`oldTag\` should NOT include the # prefix
-- \`newTag\` should be the final form (no # prefix)
-- \`newTag: null\` means remove the tag entirely
-- Do NOT include notes where all tags have action KEEP
-
-## Phase 4: Write the Plan Note
-
-Write the complete plan to \`_Tag Migration Plan.md\` using:
+Write the plan to \`_Tag Migration Plan.md\` using:
 \`\`\`
 write_note({
   path: "_Tag Migration Plan.md",
@@ -160,24 +125,19 @@ write_note({
 The plan note must include these sections in order:
 1. Executive Summary
 2. Tag Mapping Table (human-readable)
-3. Unmapped Tags Requiring Decisions
-4. Migration Statistics (total notes, changes, unmapped count)
-5. **Machine-Parseable Worklist** — a section containing the complete JSON worklist in a fenced code block
+3. Unmapped Tags Requiring Decisions (with recommended resolutions)
+4. Migration Statistics
+5. Next Steps — instruct the user to:
+   - Review the mapping table and resolve any unmapped tags
+   - Run \`bun run tagging-agent.ts generate-worklist\` to produce the machine-parseable worklist
+   - Run \`bun run tagging-agent.ts execute\` to apply changes
 
 Then call \`git_commit({ message: "Plan complete: _Tag Migration Plan.md" })\`.
-
-## Budget Guidance
-
-- Reading all ~600 tagged notes at "minimal" detail: ~30K tokens
-- This is expected and necessary
-- Do NOT skip the worklist generation to save budget
-- The worklist enables 50% cost savings in execute phase
 
 ## Constraints
 
 - New tags must conform to lowercase kebab-case with valid prefixes: status/, type/, area/, project/ (or flat topic tags without prefix).
-- The migration plan is the input for the execute phase — it must be comprehensive and machine-parseable.
-- Execution batch size will be ${config.batchSize} notes per invocation.
+- REVIEW-ONLY — do NOT modify any vault notes except writing the plan note.
 - Vault path: ${config.vaultPath}`;
 }
 
@@ -224,6 +184,14 @@ read_note({ path: "_Tag Migration Plan.md", detail: "full" })
 Find the JSON code block in the "Machine-Parseable Worklist" section. Parse it to get:
 - \`worklist\`: Array of { path, changes } objects
 - \`totalNotes\`: Total notes to process
+
+### Step 2.5: Validate Worklist Completeness
+
+Compare the worklist against the vault:
+- If worklist contains 0 entries: STOP and report "Empty worklist — run generate-worklist first"
+- If worklist.totalNotes is present and the worklist array length doesn't match: STOP and report the mismatch
+
+This validation prevents processing a truncated or empty worklist.
 
 ### Step 3: Compute This Batch
 
@@ -420,10 +388,13 @@ export function buildUserPrompt(mode: AgentMode, config: Config): string {
     return `Audit all tags in the vault at ${config.vaultPath}. Write the report to _Tag Audit Report.md.`;
   }
   if (mode === "plan") {
-    return `Generate a tag migration plan based on the audit report. Write the plan to _Tag Migration Plan.md. Batch size for execution will be ${config.batchSize}.`;
+    return `Generate a tag migration plan based on the audit report. Write the plan to _Tag Migration Plan.md. The per-note worklist will be generated separately by the generate-worklist command. Batch size for execution will be ${config.batchSize}.`;
   }
   if (mode === "execute") {
     return `Apply the tag migration plan to the vault at ${config.vaultPath}. Process up to ${config.batchSize} notes in this batch.`;
+  }
+  if (mode === "generate-worklist") {
+    return `Generate the migration worklist for the vault at ${config.vaultPath}.`;
   }
   if (mode === "verify") {
     return `Verify the tag migration in the vault at ${config.vaultPath}. Write the verification report to _Tag Migration Verification.md.`;
@@ -466,7 +437,7 @@ function getAllowedTools(): string[] {
 async function runAgent(config: Config) {
   const modeArg = process.argv[2] as AgentMode | undefined;
   const mode =
-    modeArg && ["audit", "plan", "execute", "verify"].includes(modeArg)
+    modeArg && ["audit", "plan", "generate-worklist", "execute", "verify"].includes(modeArg)
       ? (modeArg as AgentMode)
       : config.agentMode;
 
@@ -479,6 +450,72 @@ async function runAgent(config: Config) {
   console.log(`Model: ${config.agentModel}`);
   console.log("=".repeat(60));
   console.log();
+
+  const startTime = Date.now();
+
+  // generate-worklist mode: pure code, no LLM
+  if (mode === "generate-worklist") {
+    console.log("Generating worklist deterministically (no LLM)...\n");
+
+    const auditMappings = await loadAuditMappings(config.vaultPath);
+    if (auditMappings) {
+      console.log("Loaded audit-discovered mappings from _Tag Audit Data.json");
+    } else {
+      console.log("No _Tag Audit Data.json found — using hardcoded mappings only");
+    }
+
+    const result = await generateWorklist(config.vaultPath, auditMappings);
+
+    // Print stats
+    console.log(`Notes scanned: ${result.stats.totalNotesScanned}`);
+    console.log(`Notes with tags: ${result.stats.notesWithTags}`);
+    console.log(`Notes requiring changes: ${result.stats.notesWithChanges}`);
+    console.log(`Total tag changes: ${result.stats.totalChanges}`);
+    console.log(`Unmapped tags: ${result.stats.unmappedTagCount}`);
+    if (result.warnings.length > 0) {
+      console.log(`\nWarnings:`);
+      for (const w of result.warnings) console.log(`  - ${w}`);
+    }
+
+    // Format and write the worklist to the plan note
+    const worklistMarkdown = formatWorklistMarkdown(result);
+
+    // Read existing plan note if it exists, append/replace worklist section
+    const planPath = join(config.vaultPath, "_Tag Migration Plan.md");
+    let planContent: string;
+    try {
+      const existing = await readFile(planPath, "utf-8");
+      // Replace everything from "## Worklist Generation Summary" onward
+      const cutoff = existing.indexOf("## Worklist Generation Summary");
+      if (cutoff !== -1) {
+        planContent = existing.slice(0, cutoff) + worklistMarkdown;
+      } else {
+        // Append after existing content
+        planContent = existing + "\n\n" + worklistMarkdown;
+      }
+    } catch {
+      // No existing plan — create a minimal one
+      planContent = `---\ntags:\n  - type/report\ndate: '${new Date().toISOString().split("T")[0]}'\n---\n# Tag Migration Plan\n\n${worklistMarkdown}`;
+    }
+
+    await writeFile(planPath, planContent, "utf-8");
+    console.log(`\nWorklist written to _Tag Migration Plan.md`);
+    console.log(`  ${result.worklist.worklist.length} notes in worklist`);
+    console.log(`  ${result.worklist.totalChanges} total tag changes`);
+
+    if (result.worklist.unmappedTags.length > 0) {
+      console.log(`\n${result.worklist.unmappedTags.length} unmapped tags need decisions before executing.`);
+      console.log("  Review the 'Unmapped Tags' section in _Tag Migration Plan.md");
+    }
+
+    console.log();
+    console.log("=".repeat(60));
+    console.log(`Mode: generate-worklist complete`);
+    console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+    console.log(`Cost: $0.0000 (no LLM used)`);
+    console.log("=".repeat(60));
+    return;
+  }
 
   let systemPrompt: string;
   if (mode === "audit") {
@@ -508,7 +545,6 @@ async function runAgent(config: Config) {
     };
   }
 
-  const startTime = Date.now();
   let finalResult = "";
   let totalCost = 0;
 

@@ -6,6 +6,8 @@ import {
   parseTagScheme,
   NOISE_TAG_PATTERNS,
   SCHEME_NOTE_PATH,
+  lookupTagMapping,
+  TAG_MAPPINGS,
 } from "../tag-scheme.js";
 
 describe("TagSchemeSchema", () => {
@@ -87,5 +89,74 @@ describe("NOISE_TAG_PATTERNS", () => {
 describe("SCHEME_NOTE_PATH", () => {
   test("equals 'Proposed Tagging System.md'", () => {
     expect(SCHEME_NOTE_PATH).toBe("Proposed Tagging System.md");
+  });
+});
+
+describe("lookupTagMapping", () => {
+  test("maps known tags to new values", () => {
+    const result = lookupTagMapping("daily-reflection");
+    expect(result.action).toBe("map");
+    expect(result.newTag).toBe("type/daily-note");
+  });
+
+  test("removes noise tags", () => {
+    const result = lookupTagMapping("heading");
+    expect(result.action).toBe("remove");
+    expect(result.newTag).toBeNull();
+  });
+
+  test("removes null-mapped tags", () => {
+    const result = lookupTagMapping("follow-up-required-weekly");
+    expect(result.action).toBe("remove");
+    expect(result.newTag).toBeNull();
+  });
+
+  test("keeps already-valid topic tags", () => {
+    const result = lookupTagMapping("ai-tools");
+    expect(result.action).toBe("keep");
+    expect(result.newTag).toBe("ai-tools");
+  });
+
+  test("keeps existing hierarchical tags", () => {
+    const result = lookupTagMapping("status/pending");
+    expect(result.action).toBe("keep");
+    expect(result.newTag).toBe("status/pending");
+  });
+
+  test("normalizes underscores to hyphens", () => {
+    const result = lookupTagMapping("weekly_summary");
+    expect(result.action).toBe("map");
+    expect(result.newTag).toBe("type/summary");
+  });
+
+  test("returns unmapped for unknown tags with invalid format", () => {
+    const result = lookupTagMapping("Invalid_Tag!");
+    expect(result.action).toBe("unmapped");
+    expect(result.newTag).toBeNull();
+  });
+
+  test("uses audit mappings as fallback", () => {
+    const auditMappings = { mappings: { "custom-tag": "type/custom" } };
+    const result = lookupTagMapping("custom-tag", auditMappings);
+    expect(result.action).toBe("map");
+    expect(result.newTag).toBe("type/custom");
+  });
+
+  test("hardcoded mappings take priority over audit mappings", () => {
+    const auditMappings = { mappings: { "heading": "type/heading" } };
+    const result = lookupTagMapping("heading", auditMappings);
+    expect(result.action).toBe("remove");
+  });
+
+  test("keeps unknown but valid kebab-case tags", () => {
+    const result = lookupTagMapping("some-new-topic");
+    expect(result.action).toBe("keep");
+    expect(result.newTag).toBe("some-new-topic");
+  });
+
+  test("detects purely numeric noise tags", () => {
+    const result = lookupTagMapping("123");
+    expect(result.action).toBe("remove");
+    expect(result.newTag).toBeNull();
   });
 });
