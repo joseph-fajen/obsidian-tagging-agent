@@ -27,7 +27,7 @@ Edit `.env`:
 VAULT_PATH="/path/to/your/obsidian-vault"
 MAX_BUDGET_USD=1.00
 BATCH_SIZE=50
-AGENT_MODEL="claude-sonnet-4-20250514"
+AGENT_MODEL="claude-opus-4-5-20251101"  # Or claude-sonnet-4-20250514 for lower cost
 ```
 
 ## Usage
