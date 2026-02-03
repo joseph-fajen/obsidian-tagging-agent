@@ -84,8 +84,9 @@ This file tracks the current development state for Claude Code context. It's the
 
 1. **Pragmatic tool boundary (2026-02)**
    - The SDK's `allowedTools` is not enforced with `bypassPermissions` ([SDK issue #115](https://github.com/anthropics/claude-agent-sdk-typescript/issues/115))
-   - Decision: Accept pragmatic use of Bash/Read for efficiency
-   - All vault *writes* still go through MCP tools for auditability
+   - **Decision:** "Just get the work done" — accept pragmatic use of Bash/Read/Grep/Glob for efficiency
+   - **Rule:** All vault *writes* must go through MCP tools (audit boundary); reads can use whatever is efficient
+   - **Rationale:** Enforcing strict MCP-only via hooks adds complexity without clear benefit
    - Documented in CLAUDE.md and PRD.md
 
 ---

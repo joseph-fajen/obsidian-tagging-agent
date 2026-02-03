@@ -140,11 +140,18 @@ commit: <hash>
 - **Current state unknown?** → Check `PROJECT_STATUS.md`
 - **Still uncertain?** → Ask the user rather than guessing
 
-### Tool Boundary
+### Tool Boundary (Pragmatic Approach)
 
-MCP tools are the *preferred* interface for vault access, but agents may use built-in SDK tools (Bash, Read) when pragmatically beneficial. This is a documented SDK limitation: `allowedTools` restrictions are not enforced with `permissionMode: bypassPermissions`.
+**Decision (2026-02):** We prioritize "getting the work done" over strict MCP-only enforcement.
 
-**Rule:** All vault *writes* must go through MCP tools. Reads can use whatever is efficient.
+MCP tools are the *preferred* interface for vault access, but agents (both the tagging agent and Claude Code during development) may use built-in SDK tools (Bash, Read, Grep, Glob) when pragmatically beneficial. This is a documented SDK limitation: `allowedTools` restrictions are not enforced with `permissionMode: bypassPermissions` ([SDK issue #115](https://github.com/anthropics/claude-agent-sdk-typescript/issues/115)).
+
+**Rules:**
+1. All vault *writes* must go through MCP tools — this is the audit boundary
+2. Reads can use whatever is most efficient (MCP tools, Bash, or SDK built-ins)
+3. Don't waste time trying to enforce strict tool restrictions when the SDK doesn't support it
+
+**Rationale:** The cost of enforcing MCP-only reads (via hooks or other workarounds) outweighs the benefit. Vault writes are the critical audit point, and those are protected.
 
 ---
 
