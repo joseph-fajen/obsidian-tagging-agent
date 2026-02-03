@@ -91,8 +91,24 @@ export async function generateWorklist(
       continue;
     }
 
-    // Extract all tags
-    const parsed = parseFrontmatter(raw);
+    // Skip Templater template files (contain unexpanded <% %> syntax)
+    // These have unparseable YAML due to nested quotes in expressions
+    if (raw.includes("<%") && raw.includes("%>")) {
+      warnings.push(`Skipping template file (contains Templater syntax): ${notePath}`);
+      notesSkipped++;
+      continue;
+    }
+
+    // Extract all tags with graceful YAML error handling
+    let parsed;
+    try {
+      parsed = parseFrontmatter(raw);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      warnings.push(`YAML parsing failed for ${notePath}: ${errMsg}`);
+      notesSkipped++;
+      continue;
+    }
     const frontmatterTags = getFrontmatterTags(parsed.data);
     const inlineTags = extractInlineTags(parsed.content);
     const allTags = [...new Set([...frontmatterTags, ...inlineTags])];

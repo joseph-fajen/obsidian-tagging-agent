@@ -56,6 +56,12 @@ Examples:
       try {
         const fullPath = safePath(vaultPath, notePath);
         const raw = await readFile(fullPath, "utf-8");
+
+        // Skip Templater template files (unparseable YAML due to nested quotes)
+        if (raw.includes("<%") && raw.includes("%>")) {
+          return errorResult(`Cannot process template file (contains Templater syntax): ${notePath}`);
+        }
+
         const parsed = parseFrontmatter(raw);
         let body = parsed.content;
         let currentTags = getFrontmatterTags(parsed.data);

@@ -591,11 +591,207 @@ async function runAgent(config: Config) {
   console.log("=".repeat(60));
 }
 
+// ============================================================================
+// RECOVERY AGENT — Self-reflection on errors
+// ============================================================================
+
+interface RecoveryAnalysis {
+  strategy: "retry" | "skip" | "ask_user" | "abort";
+  explanation: string;
+  suggestedFix?: string;
+  userQuestion?: string;
+}
+
+function buildRecoverySystemPrompt(mode: AgentMode, errorMessage: string, context: string): string {
+  return `You are an error recovery agent for the Obsidian Vault Tagging Agent.
+
+The agent was running in "${mode}" mode and encountered an error. Your job is to analyze the error and recommend a recovery strategy.
+
+## Error Details
+
+\`\`\`
+${errorMessage}
+\`\`\`
+
+## Context
+
+${context}
+
+## Your Task
+
+Analyze this error and respond with a JSON object containing your recovery recommendation:
+
+\`\`\`json
+{
+  "strategy": "retry" | "skip" | "ask_user" | "abort",
+  "explanation": "Brief explanation of what went wrong and why you recommend this strategy",
+  "suggestedFix": "If strategy is retry, explain what should be different",
+  "userQuestion": "If strategy is ask_user, the question to ask"
+}
+\`\`\`
+
+## Strategy Guidelines
+
+- **retry**: Use when the error is transient or a simple fix is available (e.g., retry with different parameters)
+- **skip**: Use when one item failed but others can proceed (e.g., one unparseable file in a batch)
+- **ask_user**: Use when you need human judgment (e.g., ambiguous requirements, multiple valid approaches)
+- **abort**: Use when the error is fundamental and cannot be recovered (e.g., missing required files, invalid configuration)
+
+Respond ONLY with the JSON object, no other text.`;
+}
+
+async function analyzeErrorWithLLM(
+  mode: AgentMode,
+  error: Error,
+  context: string,
+  config: Config,
+): Promise<RecoveryAnalysis> {
+  const systemPrompt = buildRecoverySystemPrompt(mode, error.message, context);
+
+  try {
+    let result = "";
+    for await (const message of query({
+      prompt: (async function* () {
+        yield {
+          type: "user" as const,
+          message: {
+            role: "user" as const,
+            content: [{ type: "text" as const, text: "Analyze this error and recommend a recovery strategy." }],
+          },
+          parent_tool_use_id: null as string | null,
+          session_id: "",
+        };
+      })(),
+      options: {
+        model: "claude-sonnet-4-20250514",
+        systemPrompt,
+        maxBudgetUsd: 0.05, // Small budget for recovery analysis
+        permissionMode: "bypassPermissions",
+      },
+    })) {
+      if (message.type === "assistant" && message.message?.content) {
+        for (const block of message.message.content) {
+          if ("text" in block) {
+            result = block.text;
+          }
+        }
+      }
+    }
+
+    // Parse JSON response
+    const jsonMatch = result.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const analysis = JSON.parse(jsonMatch[0]) as RecoveryAnalysis;
+      return analysis;
+    }
+
+    // Fallback if parsing fails
+    return {
+      strategy: "abort",
+      explanation: `Could not parse recovery analysis. Original error: ${error.message}`,
+    };
+  } catch (recoveryError) {
+    // If recovery analysis itself fails, abort
+    return {
+      strategy: "abort",
+      explanation: `Recovery analysis failed: ${recoveryError}. Original error: ${error.message}`,
+    };
+  }
+}
+
+async function runWithRecovery(config: Config): Promise<void> {
+  const modeArg = process.argv[2] as AgentMode | undefined;
+  const mode =
+    modeArg && ["audit", "plan", "generate-worklist", "execute", "verify"].includes(modeArg)
+      ? (modeArg as AgentMode)
+      : config.agentMode;
+
+  let attempts = 0;
+  const maxAttempts = 3;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+
+    try {
+      await runAgent(config);
+      return; // Success — exit the recovery loop
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+
+      console.log();
+      console.log("=".repeat(60));
+      console.log("ERROR ENCOUNTERED — Analyzing for recovery...");
+      console.log("=".repeat(60));
+      console.log();
+
+      // Build context for recovery agent
+      const context = [
+        `Mode: ${mode}`,
+        `Vault: ${config.vaultPath}`,
+        `Attempt: ${attempts}/${maxAttempts}`,
+        `Error type: ${err.name}`,
+        `Stack trace (first 500 chars): ${err.stack?.slice(0, 500) || "N/A"}`,
+      ].join("\n");
+
+      // Analyze with LLM
+      const analysis = await analyzeErrorWithLLM(mode, err, context, config);
+
+      console.log("Recovery Analysis:");
+      console.log(`  Strategy: ${analysis.strategy}`);
+      console.log(`  Explanation: ${analysis.explanation}`);
+      if (analysis.suggestedFix) {
+        console.log(`  Suggested Fix: ${analysis.suggestedFix}`);
+      }
+      console.log();
+
+      switch (analysis.strategy) {
+        case "retry":
+          console.log(`Retrying (attempt ${attempts + 1}/${maxAttempts})...`);
+          console.log();
+          continue; // Loop back and retry
+
+        case "skip":
+          console.log("Skipping problematic item and continuing...");
+          console.log("Note: The skip strategy requires manual intervention to identify what to skip.");
+          console.log("Please review the error, fix or skip the problematic file, and re-run.");
+          console.log();
+          console.log("=".repeat(60));
+          console.log("Recovery suggestion: skip (requires manual action)");
+          console.log("=".repeat(60));
+          process.exit(1);
+
+        case "ask_user":
+          console.log("User input needed:");
+          console.log(`  ${analysis.userQuestion || "How would you like to proceed?"}`);
+          console.log();
+          console.log("Please address the question and re-run the command.");
+          console.log();
+          console.log("=".repeat(60));
+          console.log("Recovery suggestion: user input required");
+          console.log("=".repeat(60));
+          process.exit(1);
+
+        case "abort":
+        default:
+          console.log("Cannot recover from this error. Please fix the issue and re-run.");
+          console.log();
+          console.log("=".repeat(60));
+          console.log("Recovery suggestion: abort");
+          console.log("=".repeat(60));
+          process.exit(1);
+      }
+    }
+  }
+
+  console.error(`Max retry attempts (${maxAttempts}) exceeded. Aborting.`);
+  process.exit(1);
+}
+
 // Main — only run when executed directly, not when imported for testing
 const isMainModule = import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("tagging-agent.ts");
 if (isMainModule) {
-  runAgent(loadConfig()).catch((err) => {
-    console.error("Fatal error:", err);
+  runWithRecovery(loadConfig()).catch((err) => {
+    console.error("Unhandled fatal error:", err);
     process.exit(1);
   });
 }
