@@ -185,13 +185,21 @@ Find the JSON code block in the "Machine-Parseable Worklist" section. Parse it t
 - \`worklist\`: Array of { path, changes } objects
 - \`totalNotes\`: Total notes to process
 
-### Step 2.5: Validate Worklist Completeness
+### Step 2.5: Validate Worklist and Detect Changes
 
-Compare the worklist against the vault:
-- If worklist contains 0 entries: STOP and report "Empty worklist — run generate-worklist first"
-- If worklist.totalNotes is present and the worklist array length doesn't match: STOP and report the mismatch
+**Critical validation checks:**
 
-This validation prevents processing a truncated or empty worklist.
+1. **Empty worklist:** If worklist contains 0 entries, STOP and report "Empty worklist — run generate-worklist first"
+
+2. **Internal consistency:** If worklist.totalNotes doesn't match worklist array length, STOP and report the mismatch
+
+3. **Worklist changed since last run:** If progress file exists AND progress.totalInWorklist != worklist.totalNotes:
+   - This means the worklist was regenerated with different content
+   - **RESET the migration:** Ignore the old progress file and start fresh
+   - Report: "Worklist changed (was X notes, now Y notes). Resetting migration progress."
+   - Set processedPaths = [] and batchNumber = 1
+
+This validation prevents processing a truncated worklist AND detects when generate-worklist was re-run.
 
 ### Step 3: Compute This Batch
 
@@ -431,6 +439,96 @@ function getAllowedTools(): string[] {
 }
 
 // ============================================================================
+// PRE-FLIGHT CHECKS
+// ============================================================================
+
+interface ProgressFile {
+  totalInWorklist: number;
+  processedCount: number;
+  processedPaths: string[];
+}
+
+interface WorklistData {
+  totalNotes: number;
+  worklist: Array<{ path: string }>;
+}
+
+/**
+ * Pre-flight check for execute mode: detect if worklist has changed since last run.
+ * If the worklist size differs from progress file, reset the progress file.
+ * Returns true if migration should proceed, false if there's a blocking issue.
+ */
+async function checkExecutePrerequisites(vaultPath: string): Promise<boolean> {
+  const progressPath = join(vaultPath, "_Migration_Progress.json");
+  const planPath = join(vaultPath, "_Tag Migration Plan.md");
+
+  // Read progress file (if exists)
+  let progress: ProgressFile | null = null;
+  try {
+    const progressRaw = await readFile(progressPath, "utf-8");
+    progress = JSON.parse(progressRaw) as ProgressFile;
+  } catch {
+    // No progress file — first run, proceed normally
+    console.log("No existing progress file — starting fresh migration.\n");
+    return true;
+  }
+
+  // Read plan note and extract worklist
+  let worklist: WorklistData | null = null;
+  try {
+    const planRaw = await readFile(planPath, "utf-8");
+    // Extract JSON from the "Machine-Parseable Worklist" code block
+    const jsonMatch = planRaw.match(/```json\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      worklist = JSON.parse(jsonMatch[1]) as WorklistData;
+    }
+  } catch (err) {
+    console.error(`Error reading migration plan: ${err}`);
+    console.error("Run 'bun run tagging-agent.ts generate-worklist' first.\n");
+    return false;
+  }
+
+  if (!worklist) {
+    console.error("Could not find worklist JSON in _Tag Migration Plan.md");
+    console.error("Run 'bun run tagging-agent.ts generate-worklist' first.\n");
+    return false;
+  }
+
+  // Compare totals
+  const progressTotal = progress.totalInWorklist;
+  const worklistTotal = worklist.totalNotes;
+
+  if (progressTotal !== worklistTotal) {
+    console.log("⚠️  Worklist changed since last run!");
+    console.log(`   Progress file: ${progressTotal} notes`);
+    console.log(`   Current worklist: ${worklistTotal} notes`);
+    console.log("");
+    console.log("Resetting progress file to start fresh migration...");
+
+    // Delete the stale progress file
+    const { unlink } = await import("fs/promises");
+    await unlink(progressPath);
+
+    console.log("Progress file deleted. Migration will start from the beginning.\n");
+    return true;
+  }
+
+  // Check if migration is already complete
+  if (progress.processedCount >= progressTotal) {
+    console.log("✅ Migration already complete!");
+    console.log(`   ${progress.processedCount}/${progressTotal} notes processed.`);
+    console.log("");
+    console.log("To re-run the migration, delete _Migration_Progress.json and run again.\n");
+    return false;
+  }
+
+  // Migration in progress, resume normally
+  const remaining = progressTotal - progress.processedCount;
+  console.log(`Resuming migration: ${progress.processedCount}/${progressTotal} done, ${remaining} remaining.\n`);
+  return true;
+}
+
+// ============================================================================
 // AGENT RUNNER
 // ============================================================================
 
@@ -518,6 +616,19 @@ async function runAgent(config: Config) {
     console.log(`Cost: $0.0000 (no LLM used)`);
     console.log("=".repeat(60));
     return;
+  }
+
+  // Pre-flight check for execute mode
+  if (mode === "execute") {
+    const canProceed = await checkExecutePrerequisites(config.vaultPath);
+    if (!canProceed) {
+      console.log("=".repeat(60));
+      console.log(`Mode: ${mode} — no work to do`);
+      console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+      console.log(`Cost: $0.0000 (pre-flight check only)`);
+      console.log("=".repeat(60));
+      return;
+    }
   }
 
   let systemPrompt: string;
