@@ -1,6 +1,7 @@
 ---
-status: PENDING
+status: IMPLEMENTED
 created_date: 2026-02-03
+implemented_date: 2026-02-03
 ---
 
 # Feature: Fix Inline Tag Migration in Worklist Generator

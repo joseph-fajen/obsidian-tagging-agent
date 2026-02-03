@@ -472,6 +472,9 @@ async function runAgent(config: Config) {
     console.log(`Notes requiring changes: ${result.stats.notesWithChanges}`);
     console.log(`Total tag changes: ${result.stats.totalChanges}`);
     console.log(`Unmapped tags: ${result.stats.unmappedTagCount}`);
+    if (result.stats.inlineMigrations > 0) {
+      console.log(`Inline tag migrations: ${result.stats.inlineMigrations}`);
+    }
     if (result.warnings.length > 0) {
       console.log(`\nWarnings:`);
       for (const w of result.warnings) console.log(`  - ${w}`);

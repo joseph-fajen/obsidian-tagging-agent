@@ -9,6 +9,7 @@ import { lookupTagMapping, type AuditMappings } from "../tag-scheme.js";
 export interface TagChange {
   oldTag: string;
   newTag: string | null;
+  reason?: "format-change" | "inline-migration" | "noise-removal";
 }
 
 export interface NoteChanges {
@@ -42,6 +43,7 @@ export interface WorklistGeneratorResult {
     notesSkipped: number;
     totalChanges: number;
     unmappedTagCount: number;
+    inlineMigrations: number;
   };
 }
 
@@ -64,6 +66,7 @@ export async function generateWorklist(
   let notesWithTags = 0;
   let notesSkipped = 0;
   let totalChanges = 0;
+  let inlineMigrations = 0;
 
   // Read all files recursively
   const entries = await readdir(vaultPath, { recursive: true, withFileTypes: true });
@@ -127,16 +130,22 @@ export async function generateWorklist(
 
     for (const tag of tagsToProcess) {
       const lookup = lookupTagMapping(tag, auditMappings);
+      const isInline = inlineTags.includes(tag.toLowerCase());
 
       switch (lookup.action) {
         case "map":
-          changes.push({ oldTag: tag, newTag: lookup.newTag });
+          changes.push({ oldTag: tag, newTag: lookup.newTag, reason: "format-change" });
           break;
         case "remove":
-          changes.push({ oldTag: tag, newTag: null });
+          changes.push({ oldTag: tag, newTag: null, reason: "noise-removal" });
           break;
         case "keep":
-          // No change needed — skip
+          // Generate change if tag is inline (needs migration to frontmatter)
+          if (isInline) {
+            changes.push({ oldTag: tag, newTag: tag, reason: "inline-migration" });
+            inlineMigrations++;
+          }
+          // Skip if tag is ONLY in frontmatter (truly no change needed)
           break;
         case "unmapped": {
           // Track for the unmapped report
@@ -183,6 +192,7 @@ export async function generateWorklist(
       notesSkipped,
       totalChanges,
       unmappedTagCount: unmappedTags.length,
+      inlineMigrations,
     },
   };
 }
@@ -218,6 +228,9 @@ export function formatWorklistMarkdown(result: WorklistGeneratorResult): string 
   sections.push(`- **Notes requiring changes:** ${stats.notesWithChanges}`);
   sections.push(`- **Total tag changes:** ${stats.totalChanges}`);
   sections.push(`- **Unmapped tags:** ${stats.unmappedTagCount}`);
+  if (stats.inlineMigrations > 0) {
+    sections.push(`- **Inline tag migrations:** ${stats.inlineMigrations} (valid tags moved to frontmatter)`);
+  }
   if (stats.notesSkipped > 0) {
     sections.push(`- **Notes skipped (read errors):** ${stats.notesSkipped}`);
   }

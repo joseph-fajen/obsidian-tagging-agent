@@ -122,9 +122,9 @@ The agent now self-reflects on errors instead of immediately exiting:
 ## Next Actions
 
 1. ~~Fix Templater YAML parsing bug~~ ✅ Done
-2. Decide on approach for agent self-reflection (requires user input)
-3. Re-run `generate-worklist` to test fix
-4. Continue with execute phase if worklist generates successfully
+2. ~~Fix inline tag migration bug~~ ✅ Done (2026-02-03)
+3. Re-run full migration cycle: `generate-worklist` → `execute` → `verify`
+4. Confirm 99%+ compliance after fix
 
 ---
 

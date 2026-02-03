@@ -4,6 +4,46 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-03: Fix Inline Tag Migration in Worklist Generator
+
+### Session Context
+
+Post-migration verification revealed 86.8% compliance with ~83 notes still containing inline tags. Investigation found the worklist generator only captured 129 notes despite 627 having tags.
+
+### Root Cause
+
+The worklist generator skipped tags with `action: "keep"` (valid format) entirely, not accounting for tag **location**. Inline tags with valid format (e.g., `#ai-tools`, `#blockchain`) were never added to the worklist for migration to frontmatter.
+
+**Bug location:** `lib/worklist-generator.ts` lines 138-140
+
+### Solution Implemented
+
+1. **Preserve location info** — Check if tag exists inline before skipping
+2. **Generate changes for inline tags** — Even when format is valid, create `{ oldTag, newTag: oldTag, reason: "inline-migration" }`
+3. **Track inline migrations** — Added `inlineMigrations` stat for reporting
+4. **Verbose output** — Added console section showing inline migration count
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/worklist-generator.ts` | Added `reason` field to `TagChange`, inline tag detection, `inlineMigrations` stat |
+| `tagging-agent.ts` | Added verbose output for inline migrations |
+| `tests/worklist-generator.test.ts` | Added 4 test cases for inline tag scenarios |
+
+### Tests Added
+
+- `generates change for inline-only valid tag`
+- `does NOT generate change for frontmatter-only valid tag`
+- `generates change for tag in both locations (cleans up inline)`
+- `tracks inline migrations separately from format changes`
+
+### Commits
+
+- `<hash>` fix: include inline tags in worklist even when format is valid
+
+---
+
 ## 2026-02-03: Post-Verification Improvements
 
 ### Session Context

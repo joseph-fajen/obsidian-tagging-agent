@@ -112,8 +112,8 @@ describe("generateWorklist", () => {
       (w) => w.path === join("journal", "day1.md"),
     );
     expect(day1).toBeDefined();
-    expect(day1!.changes).toContainEqual({ oldTag: "daily-reflection", newTag: "type/daily-note" });
-    expect(day1!.changes).toContainEqual({ oldTag: "todo", newTag: "status/pending" });
+    expect(day1!.changes).toContainEqual({ oldTag: "daily-reflection", newTag: "type/daily-note", reason: "format-change" });
+    expect(day1!.changes).toContainEqual({ oldTag: "todo", newTag: "status/pending", reason: "format-change" });
   });
 
   test("removes noise tags", async () => {
@@ -149,7 +149,7 @@ describe("generateWorklist", () => {
       (w) => w.path === join("journal", "daily-with-cursor.md"),
     );
     expect(dailyNote).toBeDefined();
-    expect(dailyNote!.changes).toContainEqual({ oldTag: "daily-reflection", newTag: "type/daily-note" });
+    expect(dailyNote!.changes).toContainEqual({ oldTag: "daily-reflection", newTag: "type/daily-note", reason: "format-change" });
   });
 
   test("skips files with Templater in frontmatter", async () => {
@@ -174,7 +174,7 @@ describe("generateWorklist", () => {
       (w) => w.path === join("projects", "unknown.md"),
     );
     expect(unknown).toBeDefined();
-    expect(unknown!.changes).toContainEqual({ oldTag: "tag.with.dots", newTag: "type/mystery" });
+    expect(unknown!.changes).toContainEqual({ oldTag: "tag.with.dots", newTag: "type/mystery", reason: "format-change" });
 
     // Should not appear in unmapped list
     const unmapped = result.worklist.unmappedTags.find((u) => u.tag === "tag.with.dots");
@@ -227,5 +227,115 @@ describe("formatWorklistMarkdown", () => {
     if (result.worklist.unmappedTags.length > 0) {
       expect(md).toContain("Unmapped Tags Requiring Decisions");
     }
+  });
+});
+
+describe("inline tag migration", () => {
+  test("generates change for inline-only valid tag", async () => {
+    // Create a note with a valid tag only in the body (not frontmatter)
+    const testDir = await mkdtemp(join(tmpdir(), "worklist-inline-"));
+    const notePath = join(testDir, "inline-only.md");
+    await writeFile(notePath, `---
+tags: []
+---
+# Note with inline tag
+
+This note has #ai-tools inline but not in frontmatter.
+`, "utf-8");
+
+    const result = await generateWorklist(testDir);
+
+    expect(result.worklist.worklist.length).toBe(1);
+    expect(result.worklist.worklist[0].changes).toContainEqual({
+      oldTag: "ai-tools",
+      newTag: "ai-tools",
+      reason: "inline-migration",
+    });
+    expect(result.stats.inlineMigrations).toBe(1);
+
+    await rm(testDir, { recursive: true });
+  });
+
+  test("does NOT generate change for frontmatter-only valid tag", async () => {
+    // Create a note with a valid tag only in frontmatter (not inline)
+    const testDir = await mkdtemp(join(tmpdir(), "worklist-fm-"));
+    const notePath = join(testDir, "frontmatter-only.md");
+    await writeFile(notePath, `---
+tags:
+  - ai-tools
+---
+# Note with frontmatter tag
+
+This note has no inline tags.
+`, "utf-8");
+
+    const result = await generateWorklist(testDir);
+
+    // Should have no changes — tag is already in frontmatter with valid format
+    expect(result.worklist.worklist.length).toBe(0);
+    expect(result.stats.inlineMigrations).toBe(0);
+
+    await rm(testDir, { recursive: true });
+  });
+
+  test("generates change for tag in both locations (cleans up inline)", async () => {
+    // Create a note with the same tag in both frontmatter AND inline
+    const testDir = await mkdtemp(join(tmpdir(), "worklist-both-"));
+    const notePath = join(testDir, "both-locations.md");
+    await writeFile(notePath, `---
+tags:
+  - ai-tools
+---
+# Note with tag in both places
+
+This note has #ai-tools inline AND in frontmatter.
+`, "utf-8");
+
+    const result = await generateWorklist(testDir);
+
+    // Should generate a change to clean up the inline occurrence
+    expect(result.worklist.worklist.length).toBe(1);
+    expect(result.worklist.worklist[0].changes).toContainEqual({
+      oldTag: "ai-tools",
+      newTag: "ai-tools",
+      reason: "inline-migration",
+    });
+    expect(result.stats.inlineMigrations).toBe(1);
+
+    await rm(testDir, { recursive: true });
+  });
+
+  test("tracks inline migrations separately from format changes", async () => {
+    const testDir = await mkdtemp(join(tmpdir(), "worklist-mixed-"));
+    const notePath = join(testDir, "mixed-changes.md");
+    await writeFile(notePath, `---
+tags: []
+---
+# Mixed changes
+
+Has #ai-tools (valid inline) and #daily-reflection (needs mapping).
+`, "utf-8");
+
+    const result = await generateWorklist(testDir);
+
+    expect(result.worklist.worklist.length).toBe(1);
+    const changes = result.worklist.worklist[0].changes;
+
+    // Should have both types of changes
+    const inlineMigration = changes.find(c => c.reason === "inline-migration");
+    const formatChange = changes.find(c => c.reason === "format-change");
+
+    expect(inlineMigration).toBeDefined();
+    expect(inlineMigration?.oldTag).toBe("ai-tools");
+    expect(inlineMigration?.newTag).toBe("ai-tools");
+
+    expect(formatChange).toBeDefined();
+    expect(formatChange?.oldTag).toBe("daily-reflection");
+    expect(formatChange?.newTag).toBe("type/daily-note");
+
+    expect(result.stats.inlineMigrations).toBe(1);
+    expect(result.stats.totalChanges).toBe(2);
+
+    await rm(testDir, { recursive: true });
   });
 });
