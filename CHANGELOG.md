@@ -4,6 +4,71 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-04: Move JSON Data Files to Project Directory
+
+### Session Context
+
+After implementing deterministic batch extraction, large JSON files in the Obsidian vault were causing the app to crash on launch. The files (`_Migration_Worklist.json`, `_Migration_Progress.json`, `_Tag Audit Data.json`) were being indexed by Obsidian, overloading it with machine data meant for the agent.
+
+### Problem Statement
+
+The vault should contain human knowledge, not machine data. Large JSON files (~25KB+) cause:
+1. Obsidian to crash or hang during indexing
+2. Clutter in the vault file browser
+3. Confusion between agent artifacts and user notes
+
+### Solution Implemented
+
+Created a dedicated `data/` directory in the project root for all machine-readable JSON files:
+
+| Old Location (vault) | New Location (data/) |
+|---------------------|---------------------|
+| `_Migration_Worklist.json` | `migration-worklist.json` |
+| `_Next_Batch.json` | `next-batch.json` |
+| `_Migration_Progress.json` | `migration-progress.json` |
+| `_Tag Audit Data.json` | `audit-data.json` |
+
+**New MCP tools:**
+- `read_data_file` — Read JSON from data/ directory
+- `write_data_file` — Write JSON to data/ directory
+
+**Key changes:**
+- `lib/config.ts` — Added `dataPath` to Config interface
+- `tools/data-tools.ts` — New MCP tools for data/ access
+- `tagging-agent.ts` — Updated prompts, pre-flight, MCP registration
+- `lib/worklist-generator.ts` — Updated to write to data/
+
+**Backward compatibility:** Pre-flight functions check data/ first, then fall back to vault for old installations.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `tools/data-tools.ts` | Created — new MCP tools |
+| `lib/config.ts` | Added `dataPath` to Config |
+| `lib/worklist-generator.ts` | Updated function signatures, removed embedded JSON |
+| `tagging-agent.ts` | Updated prompts, pre-flight, MCP registration |
+| `tests/data-tools.test.ts` | Created — tests for new tools |
+| `tests/agent-prompts.test.ts` | Updated for new filenames |
+| `tests/worklist-generator.test.ts` | Updated for new function signatures |
+| `tests/preflight.test.ts` | Updated for new paths |
+| `.gitignore` | Added `data/` |
+| `README.md` | Documented data directory |
+
+### Tests Added
+
+- `createDataTools > returns 2 tools`
+- `createDataTools > tools have correct names`
+- `validateFilename - indirect testing via file operations`
+- `integration with MCP server > data tools can be combined with vault tools`
+- Updated 23 existing tests for new function signatures
+
+### Commits
+
+- `8dc57f2` feat: move JSON data files from vault to project data/ directory
+
+---
+
 ## 2026-02-04: Deterministic Batch Extraction
 
 ### Session Context

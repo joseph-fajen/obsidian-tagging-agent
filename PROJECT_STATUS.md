@@ -8,7 +8,7 @@ This file tracks the current development state for Claude Code context. It's the
 
 ## Current Phase
 
-**Active Work:** Bug fixes and architectural improvements
+**Active Work:** Architecture cleanup — JSON files moved out of vault
 
 ---
 
@@ -34,6 +34,8 @@ This file tracks the current development state for Claude Code context. It's the
 | `write_note` | ✅ Complete | Creates parent dirs |
 | `apply_tag_changes` | ✅ Complete | Per-note tag migration |
 | `git_commit` | ✅ Complete | Checkpoint commits |
+| `read_data_file` | ✅ Complete | Read from project data/ directory |
+| `write_data_file` | ✅ Complete | Write to project data/ directory |
 
 ### Agent Modes ✅
 
@@ -47,7 +49,7 @@ This file tracks the current development state for Claude Code context. It's the
 
 ### Tests ✅
 
-- 133 tests passing across 12 test files
+- 141 tests passing across 13 test files
 - `bun test` runs successfully
 
 ---
@@ -62,6 +64,7 @@ This file tracks the current development state for Claude Code context. It's the
 | Deterministic Worklist | `.agents/plans/deterministic-worklist-generator.md` | ✅ Yes |
 | Post-Maiden-Voyage Improvements | `.agents/plans/post-maiden-voyage-improvements.md` | ✅ Yes |
 | Deterministic Batch Extraction | `.agents/plans/deterministic-batch-extraction.md` | ✅ Yes |
+| Move JSON to Project Directory | `.agents/plans/move-json-to-project-directory.md` | ✅ Yes |
 
 ---
 
@@ -94,6 +97,25 @@ This file tracks the current development state for Claude Code context. It's the
 
 ## Architecture Improvements (Implemented)
 
+### JSON Data Files Moved to Project Directory ✅
+
+**Implemented:** 2026-02-04
+
+All machine-readable JSON files now live in the project's `data/` directory instead of the Obsidian vault:
+
+| Old Location (vault) | New Location (data/) |
+|---------------------|---------------------|
+| `_Migration_Worklist.json` | `migration-worklist.json` |
+| `_Next_Batch.json` | `next-batch.json` |
+| `_Migration_Progress.json` | `migration-progress.json` |
+| `_Tag Audit Data.json` | `audit-data.json` |
+
+**Why:** Large JSON files in the vault caused Obsidian to crash when indexing them. The vault is meant for human knowledge, not machine data.
+
+**New MCP tools:** `read_data_file` and `write_data_file` for accessing the data/ directory.
+
+**Backward compatibility:** Pre-flight functions check data/ first, then fall back to vault for old installations.
+
 ### Deterministic Batch Extraction ✅
 
 **Implemented:** 2026-02-04
@@ -102,16 +124,16 @@ Execute mode now starts processing immediately instead of spending 15-40 tool ca
 
 1. **`generate-worklist` writes two files:**
    - `_Tag Migration Plan.md` — Human-readable plan (unchanged)
-   - `_Migration_Worklist.json` — Pure JSON for fast machine access (new)
+   - `data/migration-worklist.json` — Pure JSON for fast machine access
 
 2. **Pre-flight computes batch:**
-   - Reads worklist JSON (or falls back to markdown)
+   - Reads worklist JSON from data/
    - Computes next batch based on progress
-   - Writes `_Next_Batch.json` for the execute agent
+   - Writes `data/next-batch.json` for the execute agent
 
 3. **Execute prompt simplified:**
    - From ~150 lines to ~50 lines
-   - Agent reads `_Next_Batch.json` directly (1 tool call)
+   - Agent reads `next-batch.json` directly (1 tool call)
    - Starts processing immediately
 
 **Impact:** Tool calls reduced from 15-40 to 1; time to start reduced from 30-90s to <5s; cost per batch reduced ~50-90%.
@@ -147,8 +169,9 @@ The agent now self-reflects on errors instead of immediately exiting:
 1. ~~Fix Templater YAML parsing bug~~ ✅ Done
 2. ~~Fix inline tag migration bug~~ ✅ Done (2026-02-03)
 3. ~~Implement deterministic batch extraction~~ ✅ Done (2026-02-04)
-4. Re-run full migration cycle: `generate-worklist` → `execute` → `verify`
-5. Confirm 99%+ compliance and measure execute performance improvement
+4. ~~Move JSON files out of vault~~ ✅ Done (2026-02-04)
+5. Re-run full migration cycle: `generate-worklist` → `execute` → `verify`
+6. Confirm 99%+ compliance and measure execute performance improvement
 
 ---
 
