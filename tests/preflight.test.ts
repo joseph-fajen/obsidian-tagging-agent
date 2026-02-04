@@ -5,11 +5,13 @@ import { tmpdir } from "os";
 
 describe("checkExecutePrerequisites", () => {
   let testVaultPath: string;
+  let testDataPath: string;
 
   beforeAll(async () => {
     testVaultPath = await mkdtemp(join(tmpdir(), "preflight-test-"));
+    testDataPath = await mkdtemp(join(tmpdir(), "preflight-data-"));
 
-    // Create a worklist JSON file
+    // Create a worklist JSON file in data/ (new location)
     const worklist = {
       generatedAt: new Date().toISOString(),
       schemeVersion: "1.0",
@@ -25,17 +27,18 @@ describe("checkExecutePrerequisites", () => {
     };
 
     await writeFile(
-      join(testVaultPath, "_Migration_Worklist.json"),
+      join(testDataPath, "migration-worklist.json"),
       JSON.stringify(worklist, null, 2),
     );
   });
 
   afterAll(async () => {
     await rm(testVaultPath, { recursive: true, force: true });
+    await rm(testDataPath, { recursive: true, force: true });
   });
 
-  test("worklist file structure is correct", async () => {
-    const worklistPath = join(testVaultPath, "_Migration_Worklist.json");
+  test("worklist file structure is correct (data/ location)", async () => {
+    const worklistPath = join(testDataPath, "migration-worklist.json");
     const content = await readFile(worklistPath, "utf-8");
     const worklist = JSON.parse(content);
 
@@ -47,7 +50,7 @@ describe("checkExecutePrerequisites", () => {
   });
 
   test("worklist entries have correct NoteChanges structure", async () => {
-    const worklistPath = join(testVaultPath, "_Migration_Worklist.json");
+    const worklistPath = join(testDataPath, "migration-worklist.json");
     const content = await readFile(worklistPath, "utf-8");
     const worklist = JSON.parse(content);
 
@@ -63,7 +66,7 @@ describe("checkExecutePrerequisites", () => {
   });
 
   test("MigrationWorklist has all required fields", async () => {
-    const worklistPath = join(testVaultPath, "_Migration_Worklist.json");
+    const worklistPath = join(testDataPath, "migration-worklist.json");
     const content = await readFile(worklistPath, "utf-8");
     const worklist = JSON.parse(content);
 
@@ -74,6 +77,35 @@ describe("checkExecutePrerequisites", () => {
     expect(worklist).toHaveProperty("totalChanges");
     expect(worklist).toHaveProperty("worklist");
     expect(worklist).toHaveProperty("unmappedTags");
+  });
+
+  test("backward compatibility - vault location still works", async () => {
+    // Create a worklist in the old vault location
+    const oldWorklist = {
+      generatedAt: new Date().toISOString(),
+      schemeVersion: "1.0",
+      generatedBy: "legacy-test",
+      totalNotes: 1,
+      totalChanges: 1,
+      worklist: [
+        { path: "legacy.md", changes: [{ oldTag: "old", newTag: "new" }] },
+      ],
+      unmappedTags: [],
+    };
+
+    await writeFile(
+      join(testVaultPath, "_Migration_Worklist.json"),
+      JSON.stringify(oldWorklist, null, 2),
+    );
+
+    const worklistPath = join(testVaultPath, "_Migration_Worklist.json");
+    const content = await readFile(worklistPath, "utf-8");
+    const worklist = JSON.parse(content);
+
+    expect(worklist.generatedBy).toBe("legacy-test");
+
+    // Clean up
+    await rm(join(testVaultPath, "_Migration_Worklist.json"));
   });
 });
 

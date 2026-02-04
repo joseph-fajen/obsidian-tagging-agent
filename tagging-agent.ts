@@ -3,10 +3,11 @@ import { loadConfig, type Config, type AgentMode } from "./lib/config.js";
 import { createVaultTools } from "./tools/vault-tools.js";
 import { createTagTools } from "./tools/tag-tools.js";
 import { createGitTools } from "./tools/git-tools.js";
+import { createDataTools } from "./tools/data-tools.js";
 import { SCHEME_NOTE_PATH } from "./tag-scheme.js";
 import { generateWorklist, loadAuditMappings, formatWorklistMarkdown, writeWorklistJson, type MigrationWorklist, type NoteChanges, type NextBatch } from "./lib/worklist-generator.js";
 import { join } from "path";
-import { readFile, writeFile, unlink } from "fs/promises";
+import { readFile, writeFile, unlink, mkdir } from "fs/promises";
 
 // ============================================================================
 // SYSTEM PROMPTS
@@ -41,9 +42,9 @@ Your task is to perform a comprehensive audit of every tag in the vault and prod
    - Noise tags list with counts
    - Unmapped tags list with counts and suggested categorization
    - Classification breakdown (mapped, unmapped, noise counts)
-7. Write structured audit data for the worklist generator:
-   write_note({
-     path: "_Tag Audit Data.json",
+7. Write structured audit data for the worklist generator to the data/ directory:
+   write_data_file({
+     filename: "audit-data.json",
      content: JSON.stringify({
        generatedAt: "<ISO-8601 timestamp>",
        generatedBy: "audit-phase-agent",
@@ -146,7 +147,7 @@ export function buildExecuteSystemPrompt(config: Config): string {
 
   return `You are a tag migration execution agent. Today's date is ${today}.
 
-Your task is to apply pre-computed tag changes. The batch has already been computed — just process what's in _Next_Batch.json.
+Your task is to apply pre-computed tag changes. The batch has already been computed — just process what's in next-batch.json.
 
 ## Critical Constraints
 
@@ -156,8 +157,8 @@ Your task is to apply pre-computed tag changes. The batch has already been compu
 
 ## Available Tools
 
-- \`read_note\`: Read _Next_Batch.json and _Migration_Progress.json
-- \`write_note\`: Update progress file
+- \`read_data_file\`: Read next-batch.json and migration-progress.json from data/ directory
+- \`write_data_file\`: Update progress file in data/ directory
 - \`apply_tag_changes\`: Apply tag changes to a note
 - \`git_commit\`: Create checkpoint commits
 
@@ -166,7 +167,7 @@ Your task is to apply pre-computed tag changes. The batch has already been compu
 ### Step 1: Read Batch File
 
 \`\`\`
-read_note({ path: "_Next_Batch.json", detail: "full" })
+read_data_file({ filename: "next-batch.json" })
 \`\`\`
 
 Parse the JSON. It contains:
@@ -181,7 +182,7 @@ If entries is empty, report "Migration complete!" and stop.
 ### Step 2: Read Progress File (if exists)
 
 \`\`\`
-read_note({ path: "_Migration_Progress.json", detail: "full" })
+read_data_file({ filename: "migration-progress.json" })
 \`\`\`
 
 If it exists, you'll update it. If not, you'll create it.
@@ -208,11 +209,11 @@ Log each result. If warnings occur, note them but continue. If a note fails, log
 ### Step 5: Update Progress File
 
 \`\`\`
-write_note({
-  path: "_Migration_Progress.json",
+write_data_file({
+  filename: "migration-progress.json",
   content: JSON.stringify({
     migrationId: "tag-migration-${today}",
-    worklistSource: "_Migration_Worklist.json",
+    worklistSource: "migration-worklist.json",
     startedAt: "<from existing or now>",
     lastUpdatedAt: "<now>",
     totalInWorklist: <from batch file>,
@@ -372,11 +373,12 @@ export function buildUserPrompt(mode: AgentMode, config: Config): string {
 // MCP SERVER ASSEMBLY
 // ============================================================================
 
-function buildMcpServer(vaultPath: string) {
+function buildMcpServer(vaultPath: string, dataPath: string) {
   const vaultTools = createVaultTools(vaultPath);
   const tagTools = createTagTools(vaultPath);
   const gitTools = createGitTools(vaultPath);
-  const allTools = [...vaultTools, ...tagTools, ...gitTools];
+  const dataTools = createDataTools(dataPath);
+  const allTools = [...vaultTools, ...tagTools, ...gitTools, ...dataTools];
 
   return createSdkMcpServer({
     name: "vault",
@@ -393,6 +395,8 @@ function getAllowedTools(): string[] {
     "mcp__vault__write_note",
     "mcp__vault__apply_tag_changes",
     "mcp__vault__git_commit",
+    "mcp__vault__read_data_file",
+    "mcp__vault__write_data_file",
   ];
 }
 
@@ -412,22 +416,30 @@ interface WorklistData {
 }
 
 /**
- * Load worklist from JSON file, falling back to embedded markdown if needed.
+ * Load worklist from JSON file, checking data/ first then vault for backward compatibility.
  * Returns null if neither source is available.
  */
-async function loadWorklistJson(vaultPath: string): Promise<MigrationWorklist | null> {
-  const jsonPath = join(vaultPath, "_Migration_Worklist.json");
-  const planPath = join(vaultPath, "_Tag Migration Plan.md");
-
-  // Try JSON file first (preferred)
+async function loadWorklistJson(dataPath: string, vaultPath: string): Promise<MigrationWorklist | null> {
+  // Try data/ first (new location)
+  const dataJsonPath = join(dataPath, "migration-worklist.json");
   try {
-    const jsonRaw = await readFile(jsonPath, "utf-8");
+    const jsonRaw = await readFile(dataJsonPath, "utf-8");
     return JSON.parse(jsonRaw) as MigrationWorklist;
   } catch {
-    // JSON file doesn't exist, try markdown fallback
+    // Fall through to vault fallback
   }
 
-  // Fallback: extract from markdown
+  // Fallback: try vault (old location)
+  const vaultJsonPath = join(vaultPath, "_Migration_Worklist.json");
+  try {
+    const jsonRaw = await readFile(vaultJsonPath, "utf-8");
+    return JSON.parse(jsonRaw) as MigrationWorklist;
+  } catch {
+    // Fall through to markdown fallback
+  }
+
+  // Final fallback: extract from markdown
+  const planPath = join(vaultPath, "_Tag Migration Plan.md");
   try {
     const planRaw = await readFile(planPath, "utf-8");
     const jsonMatch = planRaw.match(/```json\s*([\s\S]*?)\s*```/);
@@ -442,18 +454,18 @@ async function loadWorklistJson(vaultPath: string): Promise<MigrationWorklist | 
 }
 
 /**
- * Write the next batch to _Next_Batch.json for the execute agent.
+ * Write the next batch to next-batch.json in data/ for the execute agent.
  */
-async function writeNextBatch(vaultPath: string, batch: NextBatch): Promise<void> {
-  const batchPath = join(vaultPath, "_Next_Batch.json");
+async function writeNextBatch(dataPath: string, batch: NextBatch): Promise<void> {
+  const batchPath = join(dataPath, "next-batch.json");
   await writeFile(batchPath, JSON.stringify(batch, null, 2), "utf-8");
 }
 
 /**
- * Delete _Next_Batch.json if it exists (cleanup from previous run).
+ * Delete next-batch.json if it exists (cleanup from previous run).
  */
-async function deleteNextBatch(vaultPath: string): Promise<void> {
-  const batchPath = join(vaultPath, "_Next_Batch.json");
+async function deleteNextBatch(dataPath: string): Promise<void> {
+  const batchPath = join(dataPath, "next-batch.json");
   try {
     await unlink(batchPath);
   } catch {
@@ -463,22 +475,23 @@ async function deleteNextBatch(vaultPath: string): Promise<void> {
 
 /**
  * Pre-flight check for execute mode:
- * 1. Load worklist (JSON file with markdown fallback)
+ * 1. Load worklist (data/ first, then vault for backward compatibility)
  * 2. Load progress (if exists)
  * 3. Validate worklist hasn't changed
  * 4. Compute next batch
- * 5. Write _Next_Batch.json
+ * 5. Write next-batch.json to data/
  *
  * Returns true if migration should proceed, false if blocking issue or already complete.
  */
-async function checkExecutePrerequisites(vaultPath: string, batchSize: number): Promise<boolean> {
-  const progressPath = join(vaultPath, "_Migration_Progress.json");
+async function checkExecutePrerequisites(dataPath: string, vaultPath: string, batchSize: number): Promise<boolean> {
+  // Progress file now in data/ directory
+  const progressPath = join(dataPath, "migration-progress.json");
 
   // Clean up stale batch file from previous run
-  await deleteNextBatch(vaultPath);
+  await deleteNextBatch(dataPath);
 
-  // Load worklist
-  const worklist = await loadWorklistJson(vaultPath);
+  // Load worklist (checks data/ first, then vault for backward compatibility)
+  const worklist = await loadWorklistJson(dataPath, vaultPath);
   if (!worklist) {
     console.error("Could not find worklist. Run 'bun run tagging-agent.ts generate-worklist' first.\n");
     return false;
@@ -489,14 +502,21 @@ async function checkExecutePrerequisites(vaultPath: string, batchSize: number): 
     return false;
   }
 
-  // Load progress file (if exists)
+  // Load progress file (if exists) - check data/ first, then vault for backward compatibility
   let progress: ProgressFile | null = null;
   try {
     const progressRaw = await readFile(progressPath, "utf-8");
     progress = JSON.parse(progressRaw) as ProgressFile;
   } catch {
-    // No progress file — first run
-    console.log("No existing progress file — starting fresh migration.\n");
+    // Try vault location for backward compatibility
+    const vaultProgressPath = join(vaultPath, "_Migration_Progress.json");
+    try {
+      const progressRaw = await readFile(vaultProgressPath, "utf-8");
+      progress = JSON.parse(progressRaw) as ProgressFile;
+    } catch {
+      // No progress file — first run
+      console.log("No existing progress file — starting fresh migration.\n");
+    }
   }
 
   // Check if worklist changed since last run
@@ -506,7 +526,8 @@ async function checkExecutePrerequisites(vaultPath: string, batchSize: number): 
     console.log(`   Current worklist: ${worklist.totalNotes} notes`);
     console.log("");
     console.log("Resetting progress file to start fresh migration...");
-    await unlink(progressPath);
+    try { await unlink(progressPath); } catch { /* ignore */ }
+    try { await unlink(join(vaultPath, "_Migration_Progress.json")); } catch { /* ignore */ }
     console.log("Progress file deleted. Migration will start from the beginning.\n");
     progress = null;
   }
@@ -520,7 +541,7 @@ async function checkExecutePrerequisites(vaultPath: string, batchSize: number): 
     console.log("✅ Migration already complete!");
     console.log(`   ${processedCount}/${worklist.totalNotes} notes processed.`);
     console.log("");
-    console.log("To re-run the migration, delete _Migration_Progress.json and run again.\n");
+    console.log("To re-run the migration, delete data/migration-progress.json and run again.\n");
     return false;
   }
 
@@ -539,17 +560,25 @@ async function checkExecutePrerequisites(vaultPath: string, batchSize: number): 
     entries: batchEntries,
   };
 
-  // Write batch file
-  await writeNextBatch(vaultPath, nextBatch);
+  // Write batch file to data/ directory
+  await writeNextBatch(dataPath, nextBatch);
 
   // Report status
   const remaining = worklist.totalNotes - processedCount;
   if (processedCount > 0) {
     console.log(`Resuming migration: ${processedCount}/${worklist.totalNotes} done, ${remaining} remaining.`);
   }
-  console.log(`Next batch prepared: ${batchEntries.length} entries written to _Next_Batch.json\n`);
+  console.log(`Next batch prepared: ${batchEntries.length} entries written to data/next-batch.json\n`);
 
   return true;
+}
+
+// ============================================================================
+// DATA DIRECTORY SETUP
+// ============================================================================
+
+async function ensureDataDirectory(dataPath: string): Promise<void> {
+  await mkdir(dataPath, { recursive: true });
 }
 
 // ============================================================================
@@ -568,10 +597,14 @@ async function runAgent(config: Config) {
   console.log("=".repeat(60));
   console.log(`Mode: ${mode}`);
   console.log(`Vault: ${config.vaultPath}`);
+  console.log(`Data: ${config.dataPath}`);
   console.log(`Budget: $${config.maxBudgetUsd}`);
   console.log(`Model: ${config.agentModel}`);
   console.log("=".repeat(60));
   console.log();
+
+  // Ensure data directory exists
+  await ensureDataDirectory(config.dataPath);
 
   const startTime = Date.now();
 
@@ -579,11 +612,11 @@ async function runAgent(config: Config) {
   if (mode === "generate-worklist") {
     console.log("Generating worklist deterministically (no LLM)...\n");
 
-    const auditMappings = await loadAuditMappings(config.vaultPath);
+    const auditMappings = await loadAuditMappings(config.dataPath, config.vaultPath);
     if (auditMappings) {
-      console.log("Loaded audit-discovered mappings from _Tag Audit Data.json");
+      console.log("Loaded audit-discovered mappings from data/audit-data.json");
     } else {
-      console.log("No _Tag Audit Data.json found — using hardcoded mappings only");
+      console.log("No audit-data.json found — using hardcoded mappings only");
     }
 
     const result = await generateWorklist(config.vaultPath, auditMappings);
@@ -627,8 +660,8 @@ async function runAgent(config: Config) {
     console.log(`\nWorklist written to _Tag Migration Plan.md`);
 
     // Also write pure JSON for fast machine access
-    await writeWorklistJson(config.vaultPath, result.worklist);
-    console.log(`Worklist JSON written to _Migration_Worklist.json`);
+    await writeWorklistJson(config.dataPath, result.worklist);
+    console.log(`Worklist JSON written to data/migration-worklist.json`);
 
     console.log(`  ${result.worklist.worklist.length} notes in worklist`);
     console.log(`  ${result.worklist.totalChanges} total tag changes`);
@@ -649,7 +682,7 @@ async function runAgent(config: Config) {
 
   // Pre-flight check for execute mode
   if (mode === "execute") {
-    const canProceed = await checkExecutePrerequisites(config.vaultPath, config.batchSize);
+    const canProceed = await checkExecutePrerequisites(config.dataPath, config.vaultPath, config.batchSize);
     if (!canProceed) {
       console.log("=".repeat(60));
       console.log(`Mode: ${mode} — no work to do`);
@@ -674,7 +707,7 @@ async function runAgent(config: Config) {
   }
 
   const userPrompt = buildUserPrompt(mode, config);
-  const server = buildMcpServer(config.vaultPath);
+  const server = buildMcpServer(config.vaultPath, config.dataPath);
 
   async function* streamPrompt() {
     yield {

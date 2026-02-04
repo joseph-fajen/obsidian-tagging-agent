@@ -2,6 +2,9 @@
 .env
 .env.local
 
+# Agent runtime data
+data/
+
 # Dependencies
 node_modules/
 

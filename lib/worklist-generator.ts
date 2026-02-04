@@ -210,20 +210,36 @@ export async function generateWorklist(
 }
 
 /**
- * Load audit-discovered mappings from _Tag Audit Data.json if it exists.
+ * Load audit-discovered mappings from data/ directory (or vault for backward compatibility).
  * Returns undefined if the file doesn't exist or can't be parsed.
  */
-export async function loadAuditMappings(vaultPath: string): Promise<AuditMappings | undefined> {
+export async function loadAuditMappings(
+  dataPath: string,
+  vaultPath: string,
+): Promise<AuditMappings | undefined> {
+  // Try data/ first (new location)
+  try {
+    const raw = await readFile(join(dataPath, "audit-data.json"), "utf-8");
+    const data = JSON.parse(raw);
+    if (data && typeof data.mappings === "object") {
+      return data as AuditMappings;
+    }
+  } catch {
+    // Fall through to vault
+  }
+
+  // Fallback: try vault (old location)
   try {
     const raw = await readFile(join(vaultPath, "_Tag Audit Data.json"), "utf-8");
     const data = JSON.parse(raw);
     if (data && typeof data.mappings === "object") {
       return data as AuditMappings;
     }
-    return undefined;
   } catch {
-    return undefined;
+    // No audit data found
   }
+
+  return undefined;
 }
 
 /**
@@ -262,9 +278,10 @@ export function formatWorklistMarkdown(result: WorklistGeneratorResult): string 
   }
 
   sections.push("## Machine-Parseable Worklist\n");
-  sections.push("```json");
-  sections.push(JSON.stringify(worklist, null, 2));
-  sections.push("```");
+  sections.push("The full worklist is stored in the project's `data/` directory:");
+  sections.push("- `data/migration-worklist.json` — Complete worklist for execute mode");
+  sections.push("");
+  sections.push("This file is not embedded here to prevent Obsidian indexing issues.");
 
   return sections.join("\n");
 }
@@ -272,11 +289,12 @@ export function formatWorklistMarkdown(result: WorklistGeneratorResult): string 
 /**
  * Write the worklist to a separate JSON file for fast machine access.
  * This file is used by checkExecutePrerequisites() to compute batches.
+ * Written to data/ directory (not vault) to prevent Obsidian indexing issues.
  */
 export async function writeWorklistJson(
-  vaultPath: string,
+  dataPath: string,
   worklist: MigrationWorklist,
 ): Promise<void> {
-  const jsonPath = join(vaultPath, "_Migration_Worklist.json");
+  const jsonPath = join(dataPath, "migration-worklist.json");
   await writeFile(jsonPath, JSON.stringify(worklist, null, 2), "utf-8");
 }

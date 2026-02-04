@@ -4,6 +4,7 @@ import type { Config } from "../lib/config.js";
 
 const mockConfig: Config = {
   vaultPath: "/tmp/test-vault",
+  dataPath: "/tmp/test-data",
   agentMode: "audit",
   batchSize: 50,
   maxBudgetUsd: 1.0,
@@ -84,14 +85,14 @@ describe("buildPlanSystemPrompt", () => {
 describe("buildExecuteSystemPrompt", () => {
   const prompt = buildExecuteSystemPrompt(mockConfig);
 
-  test("references _Next_Batch.json as primary input", () => {
-    expect(prompt).toContain("_Next_Batch.json");
+  test("references next-batch.json as primary input", () => {
+    expect(prompt).toContain("next-batch.json");
   });
 
   test("contains key tool instructions", () => {
     expect(prompt).toContain("apply_tag_changes");
     expect(prompt).toContain("git_commit");
-    expect(prompt).toContain("read_note");
+    expect(prompt).toContain("read_data_file");
   });
 
   test("describes batch structure fields", () => {
@@ -114,11 +115,11 @@ describe("buildExecuteSystemPrompt", () => {
   });
 
   test("references progress file", () => {
-    expect(prompt).toContain("_Migration_Progress.json");
+    expect(prompt).toContain("migration-progress.json");
   });
 
   test("references worklist source for progress tracking", () => {
-    expect(prompt).toContain("_Migration_Worklist.json");
+    expect(prompt).toContain("migration-worklist.json");
   });
 
   test("forbids search_notes usage", () => {

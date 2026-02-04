@@ -5,9 +5,11 @@ import { tmpdir } from "os";
 import { generateWorklist, loadAuditMappings, formatWorklistMarkdown, writeWorklistJson } from "../lib/worklist-generator.js";
 
 let testVaultPath: string;
+let testDataPath: string;
 
 beforeAll(async () => {
   testVaultPath = await mkdtemp(join(tmpdir(), "worklist-test-"));
+  testDataPath = await mkdtemp(join(tmpdir(), "worklist-data-"));
 
   // Create test notes with various tag scenarios
   await mkdir(join(testVaultPath, "journal"), { recursive: true });
@@ -85,6 +87,7 @@ This is a template.
 
 afterAll(async () => {
   await rm(testVaultPath, { recursive: true, force: true });
+  await rm(testDataPath, { recursive: true, force: true });
 });
 
 describe("generateWorklist", () => {
@@ -195,30 +198,65 @@ describe("generateWorklist", () => {
 
 describe("loadAuditMappings", () => {
   test("returns undefined when file doesn't exist", async () => {
-    const result = await loadAuditMappings(testVaultPath);
+    const result = await loadAuditMappings(testDataPath, testVaultPath);
     expect(result).toBeUndefined();
   });
 
-  test("loads valid audit mappings file", async () => {
+  test("loads audit mappings from data/ (new location)", async () => {
     await writeFile(
-      join(testVaultPath, "_Tag Audit Data.json"),
+      join(testDataPath, "audit-data.json"),
       JSON.stringify({ mappings: { "custom": "type/custom" } }),
     );
-    const result = await loadAuditMappings(testVaultPath);
+    const result = await loadAuditMappings(testDataPath, testVaultPath);
     expect(result).toBeDefined();
     expect(result!.mappings["custom"]).toBe("type/custom");
     // Clean up
+    await rm(join(testDataPath, "audit-data.json"));
+  });
+
+  test("loads audit mappings from vault (fallback location)", async () => {
+    await writeFile(
+      join(testVaultPath, "_Tag Audit Data.json"),
+      JSON.stringify({ mappings: { "vault-custom": "type/vault" } }),
+    );
+    const result = await loadAuditMappings(testDataPath, testVaultPath);
+    expect(result).toBeDefined();
+    expect(result!.mappings["vault-custom"]).toBe("type/vault");
+    // Clean up
+    await rm(join(testVaultPath, "_Tag Audit Data.json"));
+  });
+
+  test("data/ takes precedence over vault", async () => {
+    // Create files in both locations
+    await writeFile(
+      join(testDataPath, "audit-data.json"),
+      JSON.stringify({ mappings: { "source": "data" } }),
+    );
+    await writeFile(
+      join(testVaultPath, "_Tag Audit Data.json"),
+      JSON.stringify({ mappings: { "source": "vault" } }),
+    );
+
+    const result = await loadAuditMappings(testDataPath, testVaultPath);
+    expect(result).toBeDefined();
+    expect(result!.mappings["source"]).toBe("data"); // data/ should win
+
+    // Clean up
+    await rm(join(testDataPath, "audit-data.json"));
     await rm(join(testVaultPath, "_Tag Audit Data.json"));
   });
 });
 
 describe("formatWorklistMarkdown", () => {
-  test("produces markdown with JSON code block", async () => {
+  test("produces markdown WITHOUT embedded JSON (now external)", async () => {
     const result = await generateWorklist(testVaultPath);
     const md = formatWorklistMarkdown(result);
-    expect(md).toContain("```json");
-    expect(md).toContain('"worklist"');
+    // Should NOT contain JSON block anymore
+    expect(md).not.toContain("```json");
+    // Should reference the external file
+    expect(md).toContain("data/migration-worklist.json");
     expect(md).toContain("deterministic code");
+    expect(md).toContain("Obsidian indexing issues");
   });
 
   test("includes unmapped tags table when present", async () => {
@@ -341,8 +379,9 @@ Has #ai-tools (valid inline) and #daily-reflection (needs mapping).
 });
 
 describe("writeWorklistJson", () => {
-  test("writes valid JSON file", async () => {
+  test("writes valid JSON file to data/ directory", async () => {
     const testDir = await mkdtemp(join(tmpdir(), "worklist-json-"));
+    const testData = await mkdtemp(join(tmpdir(), "worklist-json-data-"));
 
     // Create a minimal test note so worklist has content
     await writeFile(
@@ -351,11 +390,11 @@ describe("writeWorklistJson", () => {
     );
     const result = await generateWorklist(testDir);
 
-    // Write the JSON file
-    await writeWorklistJson(testDir, result.worklist);
+    // Write the JSON file to dataPath
+    await writeWorklistJson(testData, result.worklist);
 
-    // Verify file exists and is valid JSON
-    const jsonPath = join(testDir, "_Migration_Worklist.json");
+    // Verify file exists in data/ directory (new location)
+    const jsonPath = join(testData, "migration-worklist.json");
     const content = await readFile(jsonPath, "utf-8");
     const parsed = JSON.parse(content);
 
@@ -364,19 +403,21 @@ describe("writeWorklistJson", () => {
     expect(parsed.generatedBy).toBe("deterministic-worklist-generator");
 
     await rm(testDir, { recursive: true });
+    await rm(testData, { recursive: true });
   });
 
   test("JSON file contains all required fields", async () => {
     const testDir = await mkdtemp(join(tmpdir(), "worklist-json-fields-"));
+    const testData = await mkdtemp(join(tmpdir(), "worklist-json-fields-data-"));
 
     await writeFile(
       join(testDir, "note.md"),
       `---\ntags:\n  - meeting-notes\n---\nMeeting content.\n`,
     );
     const result = await generateWorklist(testDir);
-    await writeWorklistJson(testDir, result.worklist);
+    await writeWorklistJson(testData, result.worklist);
 
-    const jsonPath = join(testDir, "_Migration_Worklist.json");
+    const jsonPath = join(testData, "migration-worklist.json");
     const content = await readFile(jsonPath, "utf-8");
     const parsed = JSON.parse(content);
 
@@ -390,19 +431,21 @@ describe("writeWorklistJson", () => {
     expect(parsed).toHaveProperty("unmappedTags");
 
     await rm(testDir, { recursive: true });
+    await rm(testData, { recursive: true });
   });
 
   test("worklist entries have correct structure", async () => {
     const testDir = await mkdtemp(join(tmpdir(), "worklist-json-entries-"));
+    const testData = await mkdtemp(join(tmpdir(), "worklist-json-entries-data-"));
 
     await writeFile(
       join(testDir, "note.md"),
       `---\ntags:\n  - daily-reflection\n---\nDaily note.\n`,
     );
     const result = await generateWorklist(testDir);
-    await writeWorklistJson(testDir, result.worklist);
+    await writeWorklistJson(testData, result.worklist);
 
-    const jsonPath = join(testDir, "_Migration_Worklist.json");
+    const jsonPath = join(testData, "migration-worklist.json");
     const content = await readFile(jsonPath, "utf-8");
     const parsed = JSON.parse(content);
 
@@ -414,5 +457,6 @@ describe("writeWorklistJson", () => {
     expect(entry.changes[0]).toHaveProperty("newTag");
 
     await rm(testDir, { recursive: true });
+    await rm(testData, { recursive: true });
   });
 });

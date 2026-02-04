@@ -1,7 +1,10 @@
+import { join } from "path";
+
 export type AgentMode = "audit" | "plan" | "generate-worklist" | "execute" | "verify";
 
 export interface Config {
   vaultPath: string;
+  dataPath: string;
   agentMode: AgentMode;
   batchSize: number;
   maxBudgetUsd: number;
@@ -31,8 +34,16 @@ export function loadConfig(): Config {
     throw new Error(`Invalid MAX_BUDGET_USD: "${process.env.MAX_BUDGET_USD}". Must be a positive number.`);
   }
 
+  // Compute data path relative to project root
+  // import.meta.dir is Bun-specific; fallback to process.cwd() for other environments
+  const projectRoot = (import.meta as { dir?: string }).dir
+    ? join((import.meta as { dir: string }).dir, "..")
+    : process.cwd();
+  const dataPath = join(projectRoot, "data");
+
   return {
     vaultPath,
+    dataPath,
     agentMode: modeRaw as AgentMode,
     batchSize,
     maxBudgetUsd,

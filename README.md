@@ -66,14 +66,14 @@ This phase is read-only. Edit the plan note directly in Obsidian if you want to 
 ### Phase 2.5: Generate Worklist
 
 Produces the machine-parseable per-note worklist deterministically from code (no LLM call, no API cost). Reads every note, applies the tag mapping table, and writes:
-- `_Tag Migration Plan.md` — Human-readable plan with embedded JSON
-- `_Migration_Worklist.json` — Pure JSON for fast machine access
+- `_Tag Migration Plan.md` — Human-readable summary in the vault
+- `data/migration-worklist.json` — Complete worklist in project directory (not vault)
 
 ```bash
 bun run tagging-agent.ts generate-worklist
 ```
 
-**Review:** Check the output — it reports how many notes need changes and any unmapped tags. If there are unmapped tags, resolve them in the mapping table (`tag-scheme.ts`) or `_Tag Audit Data.json` before executing.
+**Review:** Check the output — it reports how many notes need changes and any unmapped tags. If there are unmapped tags, resolve them in the mapping table (`tag-scheme.ts`) or `data/audit-data.json` before executing.
 
 This step is instant and free (no API calls).
 
@@ -87,7 +87,7 @@ Applies the migration plan in batches. Each invocation processes up to `BATCH_SI
 bun run tagging-agent.ts execute
 ```
 
-**How it works:** Before the agent starts, a pre-flight check computes the next batch and writes it to `_Next_Batch.json`. The agent reads this file directly (1 tool call) and begins processing immediately — no time wasted extracting JSON from markdown.
+**How it works:** Before the agent starts, a pre-flight check computes the next batch and writes it to `data/next-batch.json`. The agent reads this file directly (1 tool call) and begins processing immediately — no time wasted extracting JSON from markdown.
 
 **Run this command repeatedly** until all notes are migrated. The agent skips already-processed notes, so re-running is safe. Each run reports how many notes remain.
 
@@ -156,12 +156,32 @@ tools/
   vault-tools.ts          # list_notes, read_note, search_notes, write_note
   tag-tools.ts            # apply_tag_changes
   git-tools.ts            # git_commit
+  data-tools.ts           # read_data_file, write_data_file
 tests/                    # bun test files
+data/                     # Runtime data (git-ignored, see below)
 .agents/
   plans/                  # Implementation plans (all marked IMPLEMENTED)
   retrospectives/         # Session analysis docs
 reference/workshop/       # Original Claude Agent SDK workshop examples
 ```
+
+## Data Directory
+
+The `data/` directory (git-ignored) contains machine-readable JSON files used during migration:
+
+| File | Purpose |
+|------|---------|
+| `audit-data.json` | Tag frequencies and mappings from audit phase |
+| `migration-worklist.json` | Full worklist of notes and tag changes |
+| `migration-progress.json` | Tracks which notes have been processed |
+| `next-batch.json` | Pre-computed batch for current execute run |
+
+These files are stored outside the vault to:
+1. Prevent Obsidian from indexing large JSON files (which can cause crashes)
+2. Keep machine data separate from human knowledge
+3. Allow the vault to remain clean for normal Obsidian use
+
+Human-readable reports (`_Tag Audit Report.md`, `_Tag Migration Plan.md`, `_Tag Migration Verification.md`) remain in the vault.
 
 ## Tests
 

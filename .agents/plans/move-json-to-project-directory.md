@@ -1,5 +1,6 @@
 ---
-status: PENDING
+status: IMPLEMENTED
+implemented_date: 2026-02-04
 ---
 
 # Feature: Move Machine Data to Project Directory
