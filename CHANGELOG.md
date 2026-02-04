@@ -4,6 +4,72 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-04: Interactive Agent Experience
+
+### Session Context
+
+Users requested a more "agentic" experience instead of manually running 5 separate CLI commands in the correct order. The goal was to transform the CLI tool into a conversational agent that guides users through the entire migration workflow.
+
+### Problem Statement
+
+The current agent requires users to:
+1. Manually invoke 5 separate CLI commands in the correct order
+2. Know when to run each command and what to review between them
+3. Lose conversational context between invocations
+4. Remember where they left off if they exit mid-migration
+
+This creates a "CLI tool experience" rather than an "agentic experience."
+
+### Solution Implemented
+
+Implemented an interactive REPL loop with:
+1. **State machine** controlling conversation flow through phases
+2. **Session persistence** via disk-based state file (`data/interactive-session.json`)
+3. **User input handling** via `readline/promises` for prompts between agent turns
+4. **Hybrid prompt architecture**: stable personality + dynamic phase instructions
+5. **Graceful interrupts**: Ctrl+C saves state before exit
+
+**New files:**
+- `lib/session-state.ts` — Session state types and persistence
+- `lib/agent-personality.ts` — Base personality and phase instructions
+- `lib/interactive-agent.ts` — Main interactive loop and state machine
+
+**Key features:**
+- Run `bun run tagging-agent.ts` (no args) to launch interactive mode
+- Agent introduces itself and guides through all phases
+- User can exit at any checkpoint and resume later
+- All existing CLI modes still work with explicit mode argument
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/session-state.ts` | Created — state types and persistence |
+| `lib/agent-personality.ts` | Created — personality and phase instructions |
+| `lib/interactive-agent.ts` | Created — interactive loop with state machine |
+| `lib/config.ts` | Added `interactive` mode and `sessionStatePath` |
+| `tagging-agent.ts` | Added interactive mode entry point |
+| `tests/session-state.test.ts` | Created — 13 tests for state persistence |
+| `tests/agent-personality.test.ts` | Created — 38 tests for prompts |
+| `tests/interactive-agent.test.ts` | Created — 18 tests for state transitions |
+| `tests/config.test.ts` | Created — 12 tests for config |
+| `README.md` | Documented interactive mode usage |
+| `PROJECT_STATUS.md` | Updated implementation status |
+| `.agents/plans/interactive-agent-experience.md` | Marked IMPLEMENTED |
+
+### Tests Added
+
+- 13 tests for session state (create, save, load, clear, round-trip)
+- 38 tests for personality and instruction builders
+- 18 tests for state machine transitions
+- 12 tests for config with interactive mode
+
+### Commits
+
+- `<pending>` feat: implement interactive agent experience
+
+---
+
 ## 2026-02-04: Move JSON Data Files to Project Directory
 
 ### Session Context

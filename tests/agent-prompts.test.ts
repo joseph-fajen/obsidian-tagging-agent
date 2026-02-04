@@ -9,6 +9,7 @@ const mockConfig: Config = {
   batchSize: 50,
   maxBudgetUsd: 1.0,
   agentModel: "claude-sonnet-4-20250514",
+  sessionStatePath: "/tmp/test-data/interactive-session.json",
 };
 
 describe("buildAuditSystemPrompt", () => {

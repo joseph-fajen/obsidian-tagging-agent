@@ -32,6 +32,34 @@ AGENT_MODEL="claude-opus-4-5-20251101"  # Or claude-sonnet-4-20250514 for lower 
 
 ## Usage
 
+### Interactive Mode (Recommended)
+
+Launch the agent without arguments for a guided interactive experience:
+
+```bash
+bun run tagging-agent.ts
+```
+
+The agent will:
+1. Introduce itself and explain the migration workflow
+2. Guide you through each phase (audit → plan → generate-worklist → execute → verify)
+3. Pause after each phase for you to review results
+4. Allow you to exit at any checkpoint and resume later
+
+#### Resuming a Session
+
+If you exit mid-migration, the agent saves your progress. Simply run the command again:
+
+```bash
+bun run tagging-agent.ts
+```
+
+The agent will detect your saved session and offer to resume where you left off.
+
+### CLI Mode (Advanced)
+
+For scripted or non-interactive use, you can run individual phases directly.
+
 The agent runs in five steps: four LLM-powered phases plus one deterministic code step. Each is a separate CLI invocation. **Run them in order** and review the output between each step.
 
 ```

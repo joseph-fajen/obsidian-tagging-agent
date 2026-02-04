@@ -1,6 +1,6 @@
 import { join } from "path";
 
-export type AgentMode = "audit" | "plan" | "generate-worklist" | "execute" | "verify";
+export type AgentMode = "audit" | "plan" | "generate-worklist" | "execute" | "verify" | "interactive";
 
 export interface Config {
   vaultPath: string;
@@ -9,9 +9,11 @@ export interface Config {
   batchSize: number;
   maxBudgetUsd: number;
   agentModel: string;
+  /** Path to the session state file for interactive mode */
+  sessionStatePath: string;
 }
 
-const VALID_MODES: AgentMode[] = ["audit", "plan", "generate-worklist", "execute", "verify"];
+const VALID_MODES: AgentMode[] = ["audit", "plan", "generate-worklist", "execute", "verify", "interactive"];
 
 export function loadConfig(): Config {
   const vaultPath = process.env.VAULT_PATH;
@@ -48,5 +50,6 @@ export function loadConfig(): Config {
     batchSize,
     maxBudgetUsd,
     agentModel: process.env.AGENT_MODEL || "claude-sonnet-4-20250514",
+    sessionStatePath: join(dataPath, "interactive-session.json"),
   };
 }

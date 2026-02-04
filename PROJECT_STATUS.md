@@ -8,7 +8,7 @@ This file tracks the current development state for Claude Code context. It's the
 
 ## Current Phase
 
-**Active Work:** Architecture cleanup — JSON files moved out of vault
+**Active Work:** Interactive agent experience implemented
 
 ---
 
@@ -18,10 +18,13 @@ This file tracks the current development state for Claude Code context. It's the
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| `lib/config.ts` | ✅ Complete | Config loading, mode validation, all 5 modes supported |
+| `lib/config.ts` | ✅ Complete | Config loading, mode validation, 6 modes (including interactive) |
 | `lib/frontmatter.ts` | ✅ Complete | gray-matter wrapper, `#` prefix stripping |
 | `lib/tag-parser.ts` | ✅ Complete | Inline extraction, noise detection, case-insensitive removal |
 | `lib/worklist-generator.ts` | ✅ Complete | Deterministic worklist generation (no LLM) |
+| `lib/session-state.ts` | ✅ Complete | Session state persistence for interactive mode |
+| `lib/agent-personality.ts` | ✅ Complete | Base personality and phase instructions |
+| `lib/interactive-agent.ts` | ✅ Complete | Interactive REPL loop with state machine |
 | `tag-scheme.ts` | ✅ Complete | TAG_MAPPINGS, lookupTagMapping(), noise patterns |
 
 ### MCP Tools ✅
@@ -41,6 +44,7 @@ This file tracks the current development state for Claude Code context. It's the
 
 | Mode | Status | Notes |
 |------|--------|-------|
+| `interactive` | ✅ Complete | Guided conversational experience (default) |
 | `audit` | ✅ Complete | LLM-driven, writes report + JSON |
 | `plan` | ✅ Complete | LLM-driven, creates mapping table |
 | `generate-worklist` | ✅ Complete | Deterministic code (no LLM) |
@@ -49,7 +53,7 @@ This file tracks the current development state for Claude Code context. It's the
 
 ### Tests ✅
 
-- 141 tests passing across 13 test files
+- 220+ tests passing across 16 test files
 - `bun test` runs successfully
 
 ---
@@ -65,6 +69,7 @@ This file tracks the current development state for Claude Code context. It's the
 | Post-Maiden-Voyage Improvements | `.agents/plans/post-maiden-voyage-improvements.md` | ✅ Yes |
 | Deterministic Batch Extraction | `.agents/plans/deterministic-batch-extraction.md` | ✅ Yes |
 | Move JSON to Project Directory | `.agents/plans/move-json-to-project-directory.md` | ✅ Yes |
+| Interactive Agent Experience | `.agents/plans/interactive-agent-experience.md` | ✅ Yes |
 
 ---
 

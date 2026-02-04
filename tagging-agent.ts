@@ -6,6 +6,7 @@ import { createGitTools } from "./tools/git-tools.js";
 import { createDataTools } from "./tools/data-tools.js";
 import { SCHEME_NOTE_PATH } from "./tag-scheme.js";
 import { generateWorklist, loadAuditMappings, formatWorklistMarkdown, writeWorklistJson, type MigrationWorklist, type NoteChanges, type NextBatch } from "./lib/worklist-generator.js";
+import { runInteractiveAgent } from "./lib/interactive-agent.js";
 import { join } from "path";
 import { readFile, writeFile, unlink, mkdir } from "fs/promises";
 
@@ -966,8 +967,19 @@ async function runWithRecovery(config: Config): Promise<void> {
 // Main — only run when executed directly, not when imported for testing
 const isMainModule = import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("tagging-agent.ts");
 if (isMainModule) {
-  runWithRecovery(loadConfig()).catch((err) => {
-    console.error("Unhandled fatal error:", err);
-    process.exit(1);
-  });
+  const modeArg = process.argv[2];
+
+  // If no mode argument or mode is 'interactive', run interactive mode
+  if (!modeArg || modeArg === "interactive") {
+    runInteractiveAgent(loadConfig()).catch((err) => {
+      console.error("Unhandled error:", err);
+      process.exit(1);
+    });
+  } else {
+    // Existing CLI mode logic
+    runWithRecovery(loadConfig()).catch((err) => {
+      console.error("Unhandled fatal error:", err);
+      process.exit(1);
+    });
+  }
 }
