@@ -84,8 +84,8 @@ describe("buildPlanSystemPrompt", () => {
 describe("buildExecuteSystemPrompt", () => {
   const prompt = buildExecuteSystemPrompt(mockConfig);
 
-  test("references migration plan as input", () => {
-    expect(prompt).toContain("_Tag Migration Plan.md");
+  test("references _Next_Batch.json as primary input", () => {
+    expect(prompt).toContain("_Next_Batch.json");
   });
 
   test("contains key tool instructions", () => {
@@ -94,11 +94,13 @@ describe("buildExecuteSystemPrompt", () => {
     expect(prompt).toContain("read_note");
   });
 
-  test("includes batch size from config", () => {
-    expect(prompt).toContain("50");
+  test("describes batch structure fields", () => {
+    expect(prompt).toContain("batchNumber");
+    expect(prompt).toContain("totalInWorklist");
+    expect(prompt).toContain("entries");
   });
 
-  test("instructs to skip already-processed notes", () => {
+  test("instructs to skip/log failed notes", () => {
     expect(prompt).toContain("skip");
   });
 
@@ -107,16 +109,16 @@ describe("buildExecuteSystemPrompt", () => {
     expect(prompt).toContain(today);
   });
 
-  test("states plan-only constraint", () => {
-    expect(prompt).toContain("ONLY the changes specified");
+  test("states batch-only constraint", () => {
+    expect(prompt).toContain("what the batch specifies");
   });
 
   test("references progress file", () => {
     expect(prompt).toContain("_Migration_Progress.json");
   });
 
-  test("references Machine-Parseable Worklist section", () => {
-    expect(prompt).toContain("Machine-Parseable Worklist");
+  test("references worklist source for progress tracking", () => {
+    expect(prompt).toContain("_Migration_Worklist.json");
   });
 
   test("forbids search_notes usage", () => {
@@ -127,8 +129,8 @@ describe("buildExecuteSystemPrompt", () => {
     expect(prompt).toContain("Bash");
   });
 
-  test("includes worklist validation step", () => {
-    expect(prompt).toContain("Validate Worklist");
+  test("instructs to read batch file first", () => {
+    expect(prompt).toContain("Step 1: Read Batch File");
   });
 });
 

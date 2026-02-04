@@ -1,4 +1,4 @@
-import { readdir, readFile } from "fs/promises";
+import { readdir, readFile, writeFile } from "fs/promises";
 import { join, relative } from "path";
 import { parseFrontmatter, getFrontmatterTags } from "./frontmatter.js";
 import { extractInlineTags, classifyTags } from "./tag-parser.js";
@@ -31,6 +31,18 @@ export interface MigrationWorklist {
   totalChanges: number;
   worklist: NoteChanges[];
   unmappedTags: UnmappedTag[];
+}
+
+/**
+ * Pre-computed batch for execute mode.
+ * Written by checkExecutePrerequisites(), read by execute agent.
+ */
+export interface NextBatch {
+  batchNumber: number;
+  totalInWorklist: number;
+  processedSoFar: number;
+  remaining: number;
+  entries: NoteChanges[];
 }
 
 export interface WorklistGeneratorResult {
@@ -255,4 +267,16 @@ export function formatWorklistMarkdown(result: WorklistGeneratorResult): string 
   sections.push("```");
 
   return sections.join("\n");
+}
+
+/**
+ * Write the worklist to a separate JSON file for fast machine access.
+ * This file is used by checkExecutePrerequisites() to compute batches.
+ */
+export async function writeWorklistJson(
+  vaultPath: string,
+  worklist: MigrationWorklist,
+): Promise<void> {
+  const jsonPath = join(vaultPath, "_Migration_Worklist.json");
+  await writeFile(jsonPath, JSON.stringify(worklist, null, 2), "utf-8");
 }

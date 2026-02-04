@@ -4,6 +4,65 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-04: Deterministic Batch Extraction
+
+### Session Context
+
+Execute mode was spending 15-40 tool calls and 30-90 seconds at the start of each batch trying to extract and parse the worklist JSON from the large `_Tag Migration Plan.md` file. This was inefficient, costly, and error-prone.
+
+### Problem Statement
+
+The execute agent wasted significant time, tokens, and money:
+- Reading large `_Tag Migration Plan.md` file (often failed, retried with different strategies)
+- Trying to extract JSON from markdown code block (Grep, Bash with jq, Read chunks)
+- Computing which entries were unprocessed
+- Taking 15-40 tool calls before actual tag processing began
+
+### Solution Implemented
+
+Moved the "figure out what to process" logic from the LLM to TypeScript code:
+
+1. **New file: `_Migration_Worklist.json`** — `generate-worklist` now writes a separate pure JSON file alongside the markdown plan
+2. **New file: `_Next_Batch.json`** — Pre-flight check computes next batch and writes it before agent starts
+3. **Simplified execute prompt** — From ~150 lines to ~50 lines; agent reads `_Next_Batch.json` directly (1 tool call instead of 15-40)
+4. **Backward compatibility** — Falls back to markdown if JSON file missing
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/worklist-generator.ts` | Added `NextBatch` interface, `writeWorklistJson()` function |
+| `tagging-agent.ts` | Added `loadWorklistJson()`, `writeNextBatch()`, `deleteNextBatch()` helpers; rewrote `checkExecutePrerequisites()` to compute batches; simplified `buildExecuteSystemPrompt()` |
+| `tests/worklist-generator.test.ts` | Added 3 tests for `writeWorklistJson()` |
+| `tests/preflight.test.ts` | New file with 5 integration tests |
+| `tests/agent-prompts.test.ts` | Updated execute prompt tests for new simplified prompt |
+
+### Tests Added
+
+- `writeWorklistJson > writes valid JSON file`
+- `writeWorklistJson > JSON file contains all required fields`
+- `writeWorklistJson > worklist entries have correct structure`
+- `checkExecutePrerequisites > worklist file structure is correct`
+- `checkExecutePrerequisites > worklist entries have correct NoteChanges structure`
+- `checkExecutePrerequisites > MigrationWorklist has all required fields`
+- `NextBatch structure > NextBatch interface shape is correct`
+- `NextBatch structure > NextBatch entries match NoteChanges structure`
+
+### Estimated Impact
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Tool calls to find batch | 15-40 | 1 |
+| Time to start processing | 30-90s | <5s |
+| Token cost per batch | ~$0.10-0.20 | ~$0.01 |
+| System prompt size | ~150 lines | ~50 lines |
+
+### Commits
+
+- `1580dcb` feat: implement deterministic batch extraction for execute mode
+
+---
+
 ## 2026-02-03: Fix Inline Tag Migration in Worklist Generator
 
 ### Session Context

@@ -4,9 +4,9 @@ import { createVaultTools } from "./tools/vault-tools.js";
 import { createTagTools } from "./tools/tag-tools.js";
 import { createGitTools } from "./tools/git-tools.js";
 import { SCHEME_NOTE_PATH } from "./tag-scheme.js";
-import { generateWorklist, loadAuditMappings, formatWorklistMarkdown } from "./lib/worklist-generator.js";
+import { generateWorklist, loadAuditMappings, formatWorklistMarkdown, writeWorklistJson, type MigrationWorklist, type NoteChanges, type NextBatch } from "./lib/worklist-generator.js";
 import { join } from "path";
-import { readFile, writeFile } from "fs/promises";
+import { readFile, writeFile, unlink } from "fs/promises";
 
 // ============================================================================
 // SYSTEM PROMPTS
@@ -146,148 +146,106 @@ export function buildExecuteSystemPrompt(config: Config): string {
 
   return `You are a tag migration execution agent. Today's date is ${today}.
 
-Your task is to apply pre-computed tag changes from the migration plan. You are executing a DETERMINISTIC plan — apply ONLY the changes specified in the worklist. Do NOT improvise or add extra tag changes.
+Your task is to apply pre-computed tag changes. The batch has already been computed — just process what's in _Next_Batch.json.
 
 ## Critical Constraints
 
-- Do NOT use search_notes — the worklist tells you exactly what to process
-- Do NOT use Bash or shell commands — all vault access goes through MCP tools
+- Do NOT use search_notes or Bash — everything you need is in the batch file
 - Do NOT skip notes or change the processing order
-- Do NOT modify anything beyond what the worklist specifies
+- Do NOT modify anything beyond what the batch specifies
 
 ## Available Tools
 
-- \`read_note\`: Read notes (for progress file and plan)
-- \`write_note\`: Write progress file
+- \`read_note\`: Read _Next_Batch.json and _Migration_Progress.json
+- \`write_note\`: Update progress file
 - \`apply_tag_changes\`: Apply tag changes to a note
 - \`git_commit\`: Create checkpoint commits
 
 ## Execution Algorithm
 
-Follow these steps EXACTLY:
+### Step 1: Read Batch File
 
-### Step 1: Read Progress File
+\`\`\`
+read_note({ path: "_Next_Batch.json", detail: "full" })
+\`\`\`
+
+Parse the JSON. It contains:
+- \`batchNumber\`: Which batch this is
+- \`totalInWorklist\`: Total notes in migration
+- \`processedSoFar\`: Notes already processed
+- \`remaining\`: Notes left after this batch
+- \`entries\`: Array of { path, changes } — the notes to process NOW
+
+If entries is empty, report "Migration complete!" and stop.
+
+### Step 2: Read Progress File (if exists)
 
 \`\`\`
 read_note({ path: "_Migration_Progress.json", detail: "full" })
 \`\`\`
 
-- If file exists: Parse JSON, extract \`processedPaths\` array and determine batch number from \`batchHistory.length + 1\`
-- If file doesn't exist (first batch): Initialize empty progress — processedPaths = [], batchNumber = 1
+If it exists, you'll update it. If not, you'll create it.
 
-### Step 2: Read Migration Plan
-
-\`\`\`
-read_note({ path: "_Tag Migration Plan.md", detail: "full" })
-\`\`\`
-
-Find the JSON code block in the "Machine-Parseable Worklist" section. Parse it to get:
-- \`worklist\`: Array of { path, changes } objects
-- \`totalNotes\`: Total notes to process
-
-### Step 2.5: Validate Worklist and Detect Changes
-
-**Critical validation checks:**
-
-1. **Empty worklist:** If worklist contains 0 entries, STOP and report "Empty worklist — run generate-worklist first"
-
-2. **Internal consistency:** If worklist.totalNotes doesn't match worklist array length, STOP and report the mismatch
-
-3. **Worklist changed since last run:** If progress file exists AND progress.totalInWorklist != worklist.totalNotes:
-   - This means the worklist was regenerated with different content
-   - **RESET the migration:** Ignore the old progress file and start fresh
-   - Report: "Worklist changed (was X notes, now Y notes). Resetting migration progress."
-   - Set processedPaths = [] and batchNumber = 1
-
-This validation prevents processing a truncated worklist AND detects when generate-worklist was re-run.
-
-### Step 3: Compute This Batch
-
-Filter to unprocessed notes and take the next batch:
-- remaining = worklist entries where path is NOT in processedPaths
-- batch = first ${config.batchSize} entries from remaining
-- If batch is empty: report "Migration complete! All notes processed." and skip to Step 8
-
-### Step 4: Pre-Batch Commit
+### Step 3: Pre-Batch Commit
 
 \`\`\`
-git_commit({ message: "Pre-batch <N> checkpoint" })
+git_commit({ message: "Pre-batch <batchNumber> checkpoint" })
 \`\`\`
 
-### Step 5: Process Each Note
+### Step 4: Process Each Entry
 
-For each item in the batch, in order:
+For each entry in \`entries\`, in order:
 
 \`\`\`
 apply_tag_changes({
-  path: item.path,
-  changes: item.changes
+  path: entry.path,
+  changes: entry.changes
 })
 \`\`\`
 
-Log the result (path + success/warnings). If there are warnings, note them but continue.
-If apply_tag_changes fails for a note, log the error and skip that note — continue with the rest of the batch.
+Log each result. If warnings occur, note them but continue. If a note fails, log and skip it.
 
-### Step 6: Update Progress File
-
-Create or update the progress JSON and write it:
+### Step 5: Update Progress File
 
 \`\`\`
 write_note({
   path: "_Migration_Progress.json",
   content: JSON.stringify({
-    migrationId: "<descriptive-id>",
-    worklistSource: "_Tag Migration Plan.md",
-    startedAt: "<timestamp from batch 1 or existing>",
+    migrationId: "tag-migration-${today}",
+    worklistSource: "_Migration_Worklist.json",
+    startedAt: "<from existing or now>",
     lastUpdatedAt: "<now>",
-    totalInWorklist: <total>,
-    processedCount: <previous + this batch>,
-    remainingCount: <total - processedCount>,
-    processedPaths: [...previousPaths, ...batchPaths],
-    batchHistory: [...previousBatches, {
+    totalInWorklist: <from batch file>,
+    processedCount: <processedSoFar + entries.length>,
+    remainingCount: <remaining - entries.length>,
+    processedPaths: [...existingPaths, ...newPaths],
+    batchHistory: [...existing, {
       batchNumber: <N>,
       startedAt: "<batch start>",
       completedAt: "<now>",
       notesProcessed: <count>,
-      commitHash: "<from step 7>",
-      warnings: [<any warnings>]
+      warnings: [<any>]
     }],
-    errors: [<any errors>]
+    errors: [<any>]
   }, null, 2)
 })
 \`\`\`
 
-### Step 7: Post-Batch Commit
+### Step 6: Post-Batch Commit
 
 \`\`\`
 git_commit({ message: "Tag migration batch <N>: <count> notes processed" })
 \`\`\`
 
-### Step 8: Report Results
+### Step 7: Report Results
 
 Output a summary:
 - Batch number
 - Notes processed this batch
 - Total processed so far
 - Notes remaining
-- Any warnings encountered
-- Whether more invocations are needed
-
-## Error Handling
-
-- If apply_tag_changes returns warnings: Log them, continue processing
-- If apply_tag_changes fails completely for a note: Log error, skip that note, continue batch
-- If progress file is corrupted: Report error, stop (don't risk losing progress data)
-
-## Forbidden Actions
-
-These actions will cause problems — DO NOT DO THEM:
-- search_notes — The worklist already has everything needed
-- Bash/shell commands — Violates MCP boundary
-- Skipping notes — Process in worklist order
-- Re-ordering notes — Process in worklist order
-- Modifying note content beyond tags — Only change tags
-- Processing notes not in worklist — Only process listed notes
+- Any warnings
+- Whether more invocations needed
 
 ## Vault path: ${config.vaultPath}`;
 }
@@ -454,77 +412,143 @@ interface WorklistData {
 }
 
 /**
- * Pre-flight check for execute mode: detect if worklist has changed since last run.
- * If the worklist size differs from progress file, reset the progress file.
- * Returns true if migration should proceed, false if there's a blocking issue.
+ * Load worklist from JSON file, falling back to embedded markdown if needed.
+ * Returns null if neither source is available.
  */
-async function checkExecutePrerequisites(vaultPath: string): Promise<boolean> {
-  const progressPath = join(vaultPath, "_Migration_Progress.json");
+async function loadWorklistJson(vaultPath: string): Promise<MigrationWorklist | null> {
+  const jsonPath = join(vaultPath, "_Migration_Worklist.json");
   const planPath = join(vaultPath, "_Tag Migration Plan.md");
 
-  // Read progress file (if exists)
+  // Try JSON file first (preferred)
+  try {
+    const jsonRaw = await readFile(jsonPath, "utf-8");
+    return JSON.parse(jsonRaw) as MigrationWorklist;
+  } catch {
+    // JSON file doesn't exist, try markdown fallback
+  }
+
+  // Fallback: extract from markdown
+  try {
+    const planRaw = await readFile(planPath, "utf-8");
+    const jsonMatch = planRaw.match(/```json\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[1]) as MigrationWorklist;
+    }
+  } catch {
+    // Markdown file doesn't exist or parse failed
+  }
+
+  return null;
+}
+
+/**
+ * Write the next batch to _Next_Batch.json for the execute agent.
+ */
+async function writeNextBatch(vaultPath: string, batch: NextBatch): Promise<void> {
+  const batchPath = join(vaultPath, "_Next_Batch.json");
+  await writeFile(batchPath, JSON.stringify(batch, null, 2), "utf-8");
+}
+
+/**
+ * Delete _Next_Batch.json if it exists (cleanup from previous run).
+ */
+async function deleteNextBatch(vaultPath: string): Promise<void> {
+  const batchPath = join(vaultPath, "_Next_Batch.json");
+  try {
+    await unlink(batchPath);
+  } catch {
+    // File doesn't exist, that's fine
+  }
+}
+
+/**
+ * Pre-flight check for execute mode:
+ * 1. Load worklist (JSON file with markdown fallback)
+ * 2. Load progress (if exists)
+ * 3. Validate worklist hasn't changed
+ * 4. Compute next batch
+ * 5. Write _Next_Batch.json
+ *
+ * Returns true if migration should proceed, false if blocking issue or already complete.
+ */
+async function checkExecutePrerequisites(vaultPath: string, batchSize: number): Promise<boolean> {
+  const progressPath = join(vaultPath, "_Migration_Progress.json");
+
+  // Clean up stale batch file from previous run
+  await deleteNextBatch(vaultPath);
+
+  // Load worklist
+  const worklist = await loadWorklistJson(vaultPath);
+  if (!worklist) {
+    console.error("Could not find worklist. Run 'bun run tagging-agent.ts generate-worklist' first.\n");
+    return false;
+  }
+
+  if (worklist.worklist.length === 0) {
+    console.error("Worklist is empty. Run 'bun run tagging-agent.ts generate-worklist' first.\n");
+    return false;
+  }
+
+  // Load progress file (if exists)
   let progress: ProgressFile | null = null;
   try {
     const progressRaw = await readFile(progressPath, "utf-8");
     progress = JSON.parse(progressRaw) as ProgressFile;
   } catch {
-    // No progress file — first run, proceed normally
+    // No progress file — first run
     console.log("No existing progress file — starting fresh migration.\n");
-    return true;
   }
 
-  // Read plan note and extract worklist
-  let worklist: WorklistData | null = null;
-  try {
-    const planRaw = await readFile(planPath, "utf-8");
-    // Extract JSON from the "Machine-Parseable Worklist" code block
-    const jsonMatch = planRaw.match(/```json\s*([\s\S]*?)\s*```/);
-    if (jsonMatch) {
-      worklist = JSON.parse(jsonMatch[1]) as WorklistData;
-    }
-  } catch (err) {
-    console.error(`Error reading migration plan: ${err}`);
-    console.error("Run 'bun run tagging-agent.ts generate-worklist' first.\n");
-    return false;
-  }
-
-  if (!worklist) {
-    console.error("Could not find worklist JSON in _Tag Migration Plan.md");
-    console.error("Run 'bun run tagging-agent.ts generate-worklist' first.\n");
-    return false;
-  }
-
-  // Compare totals
-  const progressTotal = progress.totalInWorklist;
-  const worklistTotal = worklist.totalNotes;
-
-  if (progressTotal !== worklistTotal) {
+  // Check if worklist changed since last run
+  if (progress && progress.totalInWorklist !== worklist.totalNotes) {
     console.log("⚠️  Worklist changed since last run!");
-    console.log(`   Progress file: ${progressTotal} notes`);
-    console.log(`   Current worklist: ${worklistTotal} notes`);
+    console.log(`   Progress file: ${progress.totalInWorklist} notes`);
+    console.log(`   Current worklist: ${worklist.totalNotes} notes`);
     console.log("");
     console.log("Resetting progress file to start fresh migration...");
-
-    // Delete the stale progress file
-    const { unlink } = await import("fs/promises");
     await unlink(progressPath);
-
     console.log("Progress file deleted. Migration will start from the beginning.\n");
-    return true;
+    progress = null;
   }
 
-  // Check if migration is already complete
-  if (progress.processedCount >= progressTotal) {
+  // Compute processed paths set
+  const processedPaths = new Set(progress?.processedPaths || []);
+  const processedCount = progress?.processedCount || 0;
+
+  // Check if already complete
+  if (processedCount >= worklist.totalNotes) {
     console.log("✅ Migration already complete!");
-    console.log(`   ${progress.processedCount}/${progressTotal} notes processed.`);
+    console.log(`   ${processedCount}/${worklist.totalNotes} notes processed.`);
     console.log("");
     console.log("To re-run the migration, delete _Migration_Progress.json and run again.\n");
     return false;
   }
 
-  // Migration in progress, resume normally
-  const remaining = progressTotal - progress.processedCount;
-  console.log(`Resuming migration: ${progress.processedCount}/${progressTotal} done, ${remaining} remaining.\n`);
+  // Compute next batch
+  const unprocessedEntries = worklist.worklist.filter(entry => !processedPaths.has(entry.path));
+  const batchEntries = unprocessedEntries.slice(0, batchSize);
+  const batchNumber = (progress?.processedPaths?.length || 0) > 0
+    ? Math.ceil(processedCount / batchSize) + 1
+    : 1;
+
+  const nextBatch: NextBatch = {
+    batchNumber,
+    totalInWorklist: worklist.totalNotes,
+    processedSoFar: processedCount,
+    remaining: worklist.totalNotes - processedCount,
+    entries: batchEntries,
+  };
+
+  // Write batch file
+  await writeNextBatch(vaultPath, nextBatch);
+
+  // Report status
+  const remaining = worklist.totalNotes - processedCount;
+  if (processedCount > 0) {
+    console.log(`Resuming migration: ${processedCount}/${worklist.totalNotes} done, ${remaining} remaining.`);
+  }
+  console.log(`Next batch prepared: ${batchEntries.length} entries written to _Next_Batch.json\n`);
+
   return true;
 }
 
@@ -601,6 +625,11 @@ async function runAgent(config: Config) {
 
     await writeFile(planPath, planContent, "utf-8");
     console.log(`\nWorklist written to _Tag Migration Plan.md`);
+
+    // Also write pure JSON for fast machine access
+    await writeWorklistJson(config.vaultPath, result.worklist);
+    console.log(`Worklist JSON written to _Migration_Worklist.json`);
+
     console.log(`  ${result.worklist.worklist.length} notes in worklist`);
     console.log(`  ${result.worklist.totalChanges} total tag changes`);
 
@@ -620,7 +649,7 @@ async function runAgent(config: Config) {
 
   // Pre-flight check for execute mode
   if (mode === "execute") {
-    const canProceed = await checkExecutePrerequisites(config.vaultPath);
+    const canProceed = await checkExecutePrerequisites(config.vaultPath, config.batchSize);
     if (!canProceed) {
       console.log("=".repeat(60));
       console.log(`Mode: ${mode} — no work to do`);

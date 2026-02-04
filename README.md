@@ -65,7 +65,9 @@ This phase is read-only. Edit the plan note directly in Obsidian if you want to 
 
 ### Phase 2.5: Generate Worklist
 
-Produces the machine-parseable per-note worklist deterministically from code (no LLM call, no API cost). Reads every note, applies the tag mapping table, and appends the complete worklist JSON to the plan note.
+Produces the machine-parseable per-note worklist deterministically from code (no LLM call, no API cost). Reads every note, applies the tag mapping table, and writes:
+- `_Tag Migration Plan.md` — Human-readable plan with embedded JSON
+- `_Migration_Worklist.json` — Pure JSON for fast machine access
 
 ```bash
 bun run tagging-agent.ts generate-worklist
@@ -84,6 +86,8 @@ Applies the migration plan in batches. Each invocation processes up to `BATCH_SI
 ```bash
 bun run tagging-agent.ts execute
 ```
+
+**How it works:** Before the agent starts, a pre-flight check computes the next batch and writes it to `_Next_Batch.json`. The agent reads this file directly (1 tool call) and begins processing immediately — no time wasted extracting JSON from markdown.
 
 **Run this command repeatedly** until all notes are migrated. The agent skips already-processed notes, so re-running is safe. Each run reports how many notes remain.
 
@@ -129,7 +133,7 @@ Each invocation respects `MAX_BUDGET_USD`. Typical costs:
 | Audit | ~$0.30-0.50 (reads all 884 notes at minimal detail) |
 | Generate Worklist | $0.00 (no LLM) |
 | Plan | ~$0.30-0.50 (reads audit report + scheme, writes plan) |
-| Execute (per batch of 50) | ~$0.20-0.40 (read + apply per note) |
+| Execute (per batch of 50) | ~$0.10-0.20 (batch pre-computed, just applies changes) |
 | Verify | ~$0.30-0.50 (reads all notes at minimal detail) |
 
 Start conservative. You can always increase `MAX_BUDGET_USD` if the agent runs out of budget mid-phase. Override per-invocation without editing `.env`:

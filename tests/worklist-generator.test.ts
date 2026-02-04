@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { generateWorklist, loadAuditMappings, formatWorklistMarkdown } from "../lib/worklist-generator.js";
+import { generateWorklist, loadAuditMappings, formatWorklistMarkdown, writeWorklistJson } from "../lib/worklist-generator.js";
 
 let testVaultPath: string;
 
@@ -335,6 +335,83 @@ Has #ai-tools (valid inline) and #daily-reflection (needs mapping).
 
     expect(result.stats.inlineMigrations).toBe(1);
     expect(result.stats.totalChanges).toBe(2);
+
+    await rm(testDir, { recursive: true });
+  });
+});
+
+describe("writeWorklistJson", () => {
+  test("writes valid JSON file", async () => {
+    const testDir = await mkdtemp(join(tmpdir(), "worklist-json-"));
+
+    // Create a minimal test note so worklist has content
+    await writeFile(
+      join(testDir, "test.md"),
+      `---\ntags:\n  - todo\n---\nTest note.\n`,
+    );
+    const result = await generateWorklist(testDir);
+
+    // Write the JSON file
+    await writeWorklistJson(testDir, result.worklist);
+
+    // Verify file exists and is valid JSON
+    const jsonPath = join(testDir, "_Migration_Worklist.json");
+    const content = await readFile(jsonPath, "utf-8");
+    const parsed = JSON.parse(content);
+
+    expect(parsed.totalNotes).toBe(result.worklist.totalNotes);
+    expect(parsed.worklist).toBeInstanceOf(Array);
+    expect(parsed.generatedBy).toBe("deterministic-worklist-generator");
+
+    await rm(testDir, { recursive: true });
+  });
+
+  test("JSON file contains all required fields", async () => {
+    const testDir = await mkdtemp(join(tmpdir(), "worklist-json-fields-"));
+
+    await writeFile(
+      join(testDir, "note.md"),
+      `---\ntags:\n  - meeting-notes\n---\nMeeting content.\n`,
+    );
+    const result = await generateWorklist(testDir);
+    await writeWorklistJson(testDir, result.worklist);
+
+    const jsonPath = join(testDir, "_Migration_Worklist.json");
+    const content = await readFile(jsonPath, "utf-8");
+    const parsed = JSON.parse(content);
+
+    // Verify all MigrationWorklist fields are present
+    expect(parsed).toHaveProperty("generatedAt");
+    expect(parsed).toHaveProperty("schemeVersion");
+    expect(parsed).toHaveProperty("generatedBy");
+    expect(parsed).toHaveProperty("totalNotes");
+    expect(parsed).toHaveProperty("totalChanges");
+    expect(parsed).toHaveProperty("worklist");
+    expect(parsed).toHaveProperty("unmappedTags");
+
+    await rm(testDir, { recursive: true });
+  });
+
+  test("worklist entries have correct structure", async () => {
+    const testDir = await mkdtemp(join(tmpdir(), "worklist-json-entries-"));
+
+    await writeFile(
+      join(testDir, "note.md"),
+      `---\ntags:\n  - daily-reflection\n---\nDaily note.\n`,
+    );
+    const result = await generateWorklist(testDir);
+    await writeWorklistJson(testDir, result.worklist);
+
+    const jsonPath = join(testDir, "_Migration_Worklist.json");
+    const content = await readFile(jsonPath, "utf-8");
+    const parsed = JSON.parse(content);
+
+    expect(parsed.worklist.length).toBe(1);
+    const entry = parsed.worklist[0];
+    expect(entry).toHaveProperty("path");
+    expect(entry).toHaveProperty("changes");
+    expect(entry.changes[0]).toHaveProperty("oldTag");
+    expect(entry.changes[0]).toHaveProperty("newTag");
 
     await rm(testDir, { recursive: true });
   });
