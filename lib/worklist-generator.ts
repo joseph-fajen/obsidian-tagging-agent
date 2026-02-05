@@ -1,8 +1,10 @@
-import { readdir, readFile, writeFile } from "fs/promises";
-import { join, relative } from "path";
+import { readFile, writeFile } from "fs/promises";
+import { join } from "path";
 import { parseFrontmatter, getFrontmatterTags } from "./frontmatter.js";
 import { extractInlineTags, classifyTags } from "./tag-parser.js";
 import { lookupTagMapping, type AuditMappings } from "../tag-scheme.js";
+import { scopeToNotes } from "./scope-filter.js";
+import type { WorkScope } from "./types.js";
 
 // === Worklist types (matching ARCHITECTURE_CHANGES.md schema) ===
 
@@ -60,15 +62,20 @@ export interface WorklistGeneratorResult {
 }
 
 /**
- * Generate a complete migration worklist by deterministically scanning every
- * note in the vault and looking up each tag in the mapping table.
+ * Generate a complete migration worklist by deterministically scanning notes
+ * in the vault and looking up each tag in the mapping table.
  *
  * This function does NOT use the LLM. It produces the same output every time
  * for the same vault state + mapping table.
+ *
+ * @param vaultPath - Path to the vault root
+ * @param auditMappings - Optional audit-discovered mappings
+ * @param scope - Optional scope to filter notes (defaults to full vault)
  */
 export async function generateWorklist(
   vaultPath: string,
   auditMappings?: AuditMappings,
+  scope?: WorkScope,
 ): Promise<WorklistGeneratorResult> {
   const warnings: string[] = [];
   const worklist: NoteChanges[] = [];
@@ -80,21 +87,12 @@ export async function generateWorklist(
   let totalChanges = 0;
   let inlineMigrations = 0;
 
-  // Read all files recursively
-  const entries = await readdir(vaultPath, { recursive: true, withFileTypes: true });
+  // Get notes based on scope (defaults to full vault)
+  // scopeToNotes already excludes _ prefixed files
+  const notePaths = await scopeToNotes(vaultPath, scope ?? { type: "full" });
 
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-
-    // Skip agent artifact notes (prefixed with _)
-    if (entry.name.startsWith("_")) continue;
-
-    const parentPath = "parentPath" in entry
-      ? (entry as unknown as { parentPath: string }).parentPath
-      : vaultPath;
-    const fullPath = join(parentPath, entry.name);
-    const notePath = relative(vaultPath, fullPath);
-
+  for (const notePath of notePaths) {
+    const fullPath = join(vaultPath, notePath);
     totalNotesScanned++;
 
     let raw: string;

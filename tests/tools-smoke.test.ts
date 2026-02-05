@@ -10,9 +10,9 @@ describe("tool creation", () => {
     expect(tools).toHaveLength(4);
   });
 
-  test("createTagTools returns 1 tool", () => {
-    const tools = createTagTools("/tmp/dummy-vault");
-    expect(tools).toHaveLength(1);
+  test("createTagTools returns 4 tools", () => {
+    const tools = createTagTools("/tmp/dummy-vault", "/tmp/dummy-data");
+    expect(tools).toHaveLength(4);
   });
 
   test("createGitTools returns 1 tool", () => {
@@ -24,7 +24,7 @@ describe("tool creation", () => {
 describe("MCP server assembly", () => {
   test("createSdkMcpServer succeeds with all tools", () => {
     const vaultTools = createVaultTools("/tmp/dummy-vault");
-    const tagTools = createTagTools("/tmp/dummy-vault");
+    const tagTools = createTagTools("/tmp/dummy-vault", "/tmp/dummy-data");
     const gitTools = createGitTools("/tmp/dummy-vault");
 
     const server = createSdkMcpServer({

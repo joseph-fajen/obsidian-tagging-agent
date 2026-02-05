@@ -10,7 +10,7 @@ import { createInterface } from "readline/promises";
 import { stdin as input, stdout as output } from "process";
 import { mkdir } from "fs/promises";
 
-import { type Config } from "./config.js";
+import { type Config, type ModelsByPhase } from "./config.js";
 import {
   type AgentPhase,
   type SessionState,
@@ -57,7 +57,7 @@ interface PhaseResult {
 
 function buildMcpServer(vaultPath: string, dataPath: string) {
   const vaultTools = createVaultTools(vaultPath);
-  const tagTools = createTagTools(vaultPath);
+  const tagTools = createTagTools(vaultPath, dataPath);
   const gitTools = createGitTools(vaultPath);
   const dataTools = createDataTools(dataPath);
   const allTools = [...vaultTools, ...tagTools, ...gitTools, ...dataTools];
@@ -76,10 +76,31 @@ function getAllowedTools(): string[] {
     "mcp__vault__search_notes",
     "mcp__vault__write_note",
     "mcp__vault__apply_tag_changes",
+    "mcp__vault__preview_changes",
+    "mcp__vault__execute_batch",
+    "mcp__vault__get_progress",
     "mcp__vault__git_commit",
     "mcp__vault__read_data_file",
     "mcp__vault__write_data_file",
   ];
+}
+
+/**
+ * Get the appropriate model for a given phase.
+ */
+function getModelForPhase(phase: AgentPhase, config: Config): string {
+  switch (phase) {
+    case "AUDIT":
+      return config.modelsByPhase.AUDIT;
+    case "PLAN":
+      return config.modelsByPhase.PLAN;
+    case "EXECUTE":
+      return config.modelsByPhase.EXECUTE;
+    case "VERIFY":
+      return config.modelsByPhase.VERIFY;
+    default:
+      return config.modelsByPhase.CONVERSATION;
+  }
 }
 
 // ============================================================================
@@ -279,6 +300,9 @@ async function runLLMPhase(
   let result = "";
   let success = true;
 
+  // Use phase-specific model for cost optimization
+  const model = getModelForPhase(phase, config);
+
   try {
     for await (const message of query({
       prompt: (async function* () {
@@ -297,7 +321,7 @@ async function runLLMPhase(
         allowedTools: getAllowedTools(),
         permissionMode: "bypassPermissions",
         maxBudgetUsd: config.maxBudgetUsd,
-        model: config.agentModel,
+        model,
         systemPrompt,
         ...(sessionId ? { resume: sessionId } : {}),
       },

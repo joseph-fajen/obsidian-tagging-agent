@@ -21,6 +21,13 @@ const mockConfig: Config = {
   batchSize: 50,
   maxBudgetUsd: 1.0,
   agentModel: "claude-sonnet-4-20250514",
+  modelsByPhase: {
+    AUDIT: "claude-sonnet-4-20250514",
+    PLAN: "claude-sonnet-4-20250514",
+    EXECUTE: "claude-haiku-4-5-20251001",
+    VERIFY: "claude-sonnet-4-20250514",
+    CONVERSATION: "claude-sonnet-4-20250514",
+  },
   sessionStatePath: "/test/data/interactive-session.json",
 };
 
@@ -108,14 +115,19 @@ describe("buildExecuteInstructions", () => {
     expect(instructions).toContain("next-batch.json");
   });
 
-  test("mentions apply_tag_changes", () => {
+  test("mentions execute_batch tool", () => {
     const instructions = buildExecuteInstructions(mockConfig);
-    expect(instructions).toContain("apply_tag_changes");
+    expect(instructions).toContain("execute_batch");
   });
 
-  test("mentions git commits", () => {
+  test("mentions get_progress tool", () => {
     const instructions = buildExecuteInstructions(mockConfig);
-    expect(instructions).toContain("git_commit");
+    expect(instructions).toContain("get_progress");
+  });
+
+  test("includes vault path", () => {
+    const instructions = buildExecuteInstructions(mockConfig);
+    expect(instructions).toContain(mockConfig.vaultPath);
   });
 });
 
@@ -155,7 +167,7 @@ describe("buildInteractiveSystemPrompt", () => {
 
   test("combines personality with phase instructions for EXECUTE", () => {
     const prompt = buildInteractiveSystemPrompt("EXECUTE", mockConfig);
-    expect(prompt).toContain("apply_tag_changes");
+    expect(prompt).toContain("execute_batch");
   });
 
   test("combines personality with phase instructions for VERIFY", () => {

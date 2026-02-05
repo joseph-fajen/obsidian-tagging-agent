@@ -106,31 +106,55 @@ Your task is to create a tag mapping table based on the audit results.
 
 /**
  * Build instructions for the execute phase.
- * Extracted from buildExecuteSystemPrompt in tagging-agent.ts.
+ * Uses the new Supervisor/Worker architecture with execute_batch tool.
  */
 export function buildExecuteInstructions(config: Config): string {
-  const today = new Date().toISOString().split("T")[0];
-
   return `## Current Phase: EXECUTE
 
-Your task is to apply pre-computed tag changes from the batch file.
+Your task is to execute the tag migration using pre-computed worklist.
 
 ### Workflow
 
-1. Read \`data/next-batch.json\` to get the entries to process
-2. Read \`data/migration-progress.json\` if it exists
-3. Commit a pre-batch checkpoint
-4. For each entry, call \`apply_tag_changes({ path, changes })\`
-5. Update \`data/migration-progress.json\` with results
-6. Commit the batch: \`git_commit({ message: "Tag migration batch N: X notes processed" })\`
-7. Report summary with batch number, processed count, and remaining
+1. **Check progress**: Call \`get_progress({})\`
+2. **Load batch**: Call \`read_data_file({ filename: "next-batch.json" })\`
+3. **Confirm with user**: Show what will be processed, ask for confirmation
+4. **Execute**: Call \`execute_batch({ entries, batchNumber })\`
+5. **Report results**: Succeeded, failed, warnings
+6. **Repeat or complete**: If more batches, ask to continue
 
-### Critical Constraints
+### Key Points
 
-- Do NOT skip notes or change the processing order
-- Everything you need is in the batch file — no searching required
-- Today's date: ${today}
+- \`execute_batch\` handles everything: applies changes, commits, updates progress
+- Do NOT call \`apply_tag_changes\` directly for batches
+- Each batch is atomic — can resume later if stopped
+
+### Constraints
+
+- Do NOT use \`search_notes\` or \`Bash\` — everything is pre-computed
+- Do NOT skip confirmation before executing
 - Vault path: ${config.vaultPath}`;
+}
+
+/**
+ * Build instructions for scope selection during REVIEW_WORKLIST phase.
+ */
+export function buildScopeSelectionInstructions(config: Config): string {
+  return `## Scope Selection
+
+Help user choose what to process:
+
+1. **Full vault**: "Process everything" / "All notes"
+2. **Folder**: "Just the Journal folder" → Ask which folder
+3. **Files**: "Process these files: ..." → User provides list
+4. **Recent**: "Check my recent notes" → Ask how many days
+5. **Tag**: "All notes with #daily" → Ask which tag
+
+After selection:
+1. Use \`preview_changes\` to show what will change
+2. Confirm they want to proceed
+3. Store scope for execute phase
+
+Vault path: ${config.vaultPath}`;
 }
 
 /**
@@ -183,6 +207,9 @@ export function buildInteractiveSystemPrompt(phase: AgentPhase, config: Config):
     case "PLAN":
       phaseInstructions = buildPlanInstructions(config);
       break;
+    case "REVIEW_WORKLIST":
+      phaseInstructions = buildScopeSelectionInstructions(config);
+      break;
     case "EXECUTE":
       phaseInstructions = buildExecuteInstructions(config);
       break;
@@ -190,7 +217,7 @@ export function buildInteractiveSystemPrompt(phase: AgentPhase, config: Config):
       phaseInstructions = buildVerifyInstructions(config);
       break;
     default:
-      // For non-LLM phases (WELCOME, REVIEW_*, GENERATE_WORKLIST, COMPLETE), no instructions needed
+      // For non-LLM phases (WELCOME, REVIEW_AUDIT, REVIEW_PLAN, GENERATE_WORKLIST, REVIEW_EXECUTE, REVIEW_VERIFY, COMPLETE), no instructions needed
       phaseInstructions = "";
   }
 

@@ -2,6 +2,26 @@ import { join } from "path";
 
 export type AgentMode = "audit" | "plan" | "generate-worklist" | "execute" | "verify" | "interactive";
 
+/**
+ * Phase-specific model configuration.
+ * Allows using cheaper models for simple phases (like EXECUTE supervision).
+ */
+export type ModelsByPhase = {
+  AUDIT: string;
+  PLAN: string;
+  EXECUTE: string;
+  VERIFY: string;
+  CONVERSATION: string;
+};
+
+const DEFAULT_MODELS: ModelsByPhase = {
+  AUDIT: "claude-sonnet-4-20250514",
+  PLAN: "claude-sonnet-4-20250514",
+  EXECUTE: "claude-haiku-4-5-20251001", // Cheaper for simple supervision
+  VERIFY: "claude-sonnet-4-20250514",
+  CONVERSATION: "claude-sonnet-4-20250514",
+};
+
 export interface Config {
   vaultPath: string;
   dataPath: string;
@@ -9,6 +29,8 @@ export interface Config {
   batchSize: number;
   maxBudgetUsd: number;
   agentModel: string;
+  /** Phase-specific model overrides */
+  modelsByPhase: ModelsByPhase;
   /** Path to the session state file for interactive mode */
   sessionStatePath: string;
 }
@@ -43,6 +65,15 @@ export function loadConfig(): Config {
     : process.cwd();
   const dataPath = join(projectRoot, "data");
 
+  // Parse phase-specific models from environment variables
+  const modelsByPhase: ModelsByPhase = {
+    AUDIT: process.env.AUDIT_MODEL || DEFAULT_MODELS.AUDIT,
+    PLAN: process.env.PLAN_MODEL || DEFAULT_MODELS.PLAN,
+    EXECUTE: process.env.EXECUTE_MODEL || DEFAULT_MODELS.EXECUTE,
+    VERIFY: process.env.VERIFY_MODEL || DEFAULT_MODELS.VERIFY,
+    CONVERSATION: process.env.CONVERSATION_MODEL || DEFAULT_MODELS.CONVERSATION,
+  };
+
   return {
     vaultPath,
     dataPath,
@@ -50,6 +81,7 @@ export function loadConfig(): Config {
     batchSize,
     maxBudgetUsd,
     agentModel: process.env.AGENT_MODEL || "claude-sonnet-4-20250514",
+    modelsByPhase,
     sessionStatePath: join(dataPath, "interactive-session.json"),
   };
 }

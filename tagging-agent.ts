@@ -376,7 +376,7 @@ export function buildUserPrompt(mode: AgentMode, config: Config): string {
 
 function buildMcpServer(vaultPath: string, dataPath: string) {
   const vaultTools = createVaultTools(vaultPath);
-  const tagTools = createTagTools(vaultPath);
+  const tagTools = createTagTools(vaultPath, dataPath);
   const gitTools = createGitTools(vaultPath);
   const dataTools = createDataTools(dataPath);
   const allTools = [...vaultTools, ...tagTools, ...gitTools, ...dataTools];
@@ -395,6 +395,9 @@ function getAllowedTools(): string[] {
     "mcp__vault__search_notes",
     "mcp__vault__write_note",
     "mcp__vault__apply_tag_changes",
+    "mcp__vault__preview_changes",
+    "mcp__vault__execute_batch",
+    "mcp__vault__get_progress",
     "mcp__vault__git_commit",
     "mcp__vault__read_data_file",
     "mcp__vault__write_data_file",

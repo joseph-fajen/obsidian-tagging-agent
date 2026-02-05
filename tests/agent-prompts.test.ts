@@ -9,6 +9,13 @@ const mockConfig: Config = {
   batchSize: 50,
   maxBudgetUsd: 1.0,
   agentModel: "claude-sonnet-4-20250514",
+  modelsByPhase: {
+    AUDIT: "claude-sonnet-4-20250514",
+    PLAN: "claude-sonnet-4-20250514",
+    EXECUTE: "claude-haiku-4-5-20251001",
+    VERIFY: "claude-sonnet-4-20250514",
+    CONVERSATION: "claude-sonnet-4-20250514",
+  },
   sessionStatePath: "/tmp/test-data/interactive-session.json",
 };
 

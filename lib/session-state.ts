@@ -7,6 +7,7 @@
 
 import { readFile, writeFile, unlink } from "fs/promises";
 import { join } from "path";
+import type { WorkScope } from "./types.js";
 
 // ============================================================================
 // TYPES
@@ -51,6 +52,8 @@ export interface SessionState {
   executeBatchNumber: number;
   executeTotalBatches: number;
   verifyComplete: boolean;
+  /** Selected scope for execute phase (set during REVIEW_WORKLIST) */
+  selectedScope?: WorkScope;
 }
 
 // ============================================================================
@@ -80,6 +83,7 @@ export function createInitialState(vaultPath: string): SessionState {
     executeBatchNumber: 0,
     executeTotalBatches: 0,
     verifyComplete: false,
+    selectedScope: undefined,
   };
 }
 
