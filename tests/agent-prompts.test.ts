@@ -80,9 +80,30 @@ describe("buildPlanSystemPrompt", () => {
     expect(prompt).toContain("Unmapped Tags");
   });
 
-  test("instructs scanning all tagged notes", () => {
-    expect(prompt).toContain("list_notes");
+  test("prioritizes read_data_file for audit-data.json", () => {
+    expect(prompt).toContain("read_data_file");
+    expect(prompt).toContain("audit-data.json");
+    expect(prompt).toContain("USE THIS FIRST");
+  });
+
+  test("instructs to use read_note only for specific files", () => {
     expect(prompt).toContain("read_note");
+    expect(prompt).toContain("USE ONLY for the audit report and scheme note");
+  });
+
+  test("contains Critical Constraint section forbidding re-scan", () => {
+    expect(prompt).toContain("Critical Constraint");
+    expect(prompt).toContain("DO NOT re-scan notes");
+  });
+
+  test("de-prioritizes list_notes and search_notes", () => {
+    expect(prompt).toContain("Tools NOT needed for this phase");
+    expect(prompt).toContain("list_notes");
+    expect(prompt).toContain("search_notes");
+  });
+
+  test("references tagFrequencies in audit-data.json", () => {
+    expect(prompt).toContain("tagFrequencies");
   });
 
   test("does NOT contain worklist JSON schema (moved to code)", () => {

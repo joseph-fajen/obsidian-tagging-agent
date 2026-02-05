@@ -83,17 +83,35 @@ IMPORTANT: You do NOT need to generate the per-note worklist. That is done by a 
 
 ## Available Tools
 
-- \`list_notes\`: List all notes in the vault
-- \`read_note\`: Read a note's content and tags
+- \`read_data_file\`: Read structured data from data/ directory — **USE THIS FIRST** for audit-data.json
+- \`read_note\`: Read a note's content — USE ONLY for the audit report and scheme note
 - \`write_note\`: Write the migration plan to the vault
-- \`search_notes\`: Find notes with specific tags (use sparingly)
 - \`git_commit\`: Commit the plan note after writing
+
+Tools NOT needed for this phase (audit already collected this data):
+- \`list_notes\` — vault inventory is in audit-data.json
+- \`search_notes\` — tag frequencies are in audit-data.json
 
 ## Phase 1: Read Inputs
 
-1. Call \`read_note({ path: "_Tag Audit Report.md", detail: "full" })\` to get the audit data.
+1. Call \`read_data_file({ filename: "audit-data.json" })\` to get the COMPLETE tag data.
+   - This file contains ALL unique tags with frequencies in \`tagFrequencies\`
+   - It also contains audit-discovered mappings in \`mappings\`
+   - You do NOT need to scan notes — this data is already collected.
    - If not found, stop and report an error. The audit phase must run first.
-2. Call \`read_note({ path: "${SCHEME_NOTE_PATH}", detail: "full" })\` to get the target scheme.
+2. Call \`read_note({ path: "_Tag Audit Report.md", detail: "full" })\` for human-readable context.
+3. Call \`read_note({ path: "${SCHEME_NOTE_PATH}", detail: "full" })\` to get the target scheme.
+
+## Critical Constraint
+
+DO NOT re-scan notes during the plan phase. The audit phase already collected:
+- All unique tags with frequencies (in audit-data.json \`tagFrequencies\`)
+- Audit-discovered mappings (in audit-data.json \`mappings\`)
+- Notes with/without frontmatter counts
+
+Your job is to CREATE MAPPINGS from the audit data, not to re-collect tag data.
+If you find yourself calling \`list_notes\`, \`search_notes\`, or making many \`read_note\` calls,
+STOP — you are duplicating audit work. Use the audit-data.json file instead.
 
 ## Phase 2: Create Tag Mapping Table
 
@@ -577,6 +595,50 @@ async function checkExecutePrerequisites(dataPath: string, vaultPath: string, ba
   return true;
 }
 
+/**
+ * Pre-flight check for plan mode:
+ * 1. Verify audit-data.json exists in data/
+ * 2. Verify _Tag Audit Report.md exists in vault
+ * 3. Validate audit-data.json has required fields
+ *
+ * Returns true if plan phase should proceed, false if blocking issue.
+ */
+export async function checkPlanPrerequisites(dataPath: string, vaultPath: string): Promise<boolean> {
+  // Check audit-data.json exists
+  const auditDataPath = join(dataPath, "audit-data.json");
+  let auditData: { tagFrequencies?: Record<string, number>; mappings?: Record<string, string | null> } | null = null;
+
+  try {
+    const auditDataRaw = await readFile(auditDataPath, "utf-8");
+    auditData = JSON.parse(auditDataRaw);
+  } catch {
+    console.error("Could not find audit-data.json. Run 'bun run tagging-agent.ts audit' first.\n");
+    return false;
+  }
+
+  // Validate audit-data.json has required fields
+  if (!auditData || !auditData.tagFrequencies) {
+    console.error("audit-data.json is missing required 'tagFrequencies' field. Re-run audit phase.\n");
+    return false;
+  }
+
+  // Check _Tag Audit Report.md exists
+  const auditReportPath = join(vaultPath, "_Tag Audit Report.md");
+  try {
+    await readFile(auditReportPath, "utf-8");
+  } catch {
+    console.error("Could not find _Tag Audit Report.md. Run 'bun run tagging-agent.ts audit' first.\n");
+    return false;
+  }
+
+  // Report what we found
+  const tagCount = Object.keys(auditData.tagFrequencies).length;
+  const mappingCount = auditData.mappings ? Object.keys(auditData.mappings).length : 0;
+  console.log(`Found audit data: ${tagCount} unique tags, ${mappingCount} audit-discovered mappings.\n`);
+
+  return true;
+}
+
 // ============================================================================
 // DATA DIRECTORY SETUP
 // ============================================================================
@@ -690,6 +752,19 @@ async function runAgent(config: Config) {
     if (!canProceed) {
       console.log("=".repeat(60));
       console.log(`Mode: ${mode} — no work to do`);
+      console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+      console.log(`Cost: $0.0000 (pre-flight check only)`);
+      console.log("=".repeat(60));
+      return;
+    }
+  }
+
+  // Pre-flight check for plan mode
+  if (mode === "plan") {
+    const canProceed = await checkPlanPrerequisites(config.dataPath, config.vaultPath);
+    if (!canProceed) {
+      console.log("=".repeat(60));
+      console.log(`Mode: ${mode} — prerequisites not met`);
       console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
       console.log(`Cost: $0.0000 (pre-flight check only)`);
       console.log("=".repeat(60));

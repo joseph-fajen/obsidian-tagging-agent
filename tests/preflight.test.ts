@@ -109,6 +109,110 @@ describe("checkExecutePrerequisites", () => {
   });
 });
 
+describe("checkPlanPrerequisites", () => {
+  let testVaultPath: string;
+  let testDataPath: string;
+
+  beforeAll(async () => {
+    testVaultPath = await mkdtemp(join(tmpdir(), "plan-preflight-test-"));
+    testDataPath = await mkdtemp(join(tmpdir(), "plan-preflight-data-"));
+  });
+
+  afterAll(async () => {
+    await rm(testVaultPath, { recursive: true, force: true });
+    await rm(testDataPath, { recursive: true, force: true });
+  });
+
+  test("returns true when all audit outputs exist", async () => {
+    // Create audit-data.json
+    const auditData = {
+      generatedAt: new Date().toISOString(),
+      generatedBy: "audit-phase-agent",
+      totalNotes: 100,
+      totalTaggedNotes: 80,
+      uniqueTags: 50,
+      mappings: { "daily-notes": "type/daily-note" },
+      tagFrequencies: { "daily-notes": 25, "todo": 10 },
+    };
+    await writeFile(
+      join(testDataPath, "audit-data.json"),
+      JSON.stringify(auditData, null, 2)
+    );
+
+    // Create _Tag Audit Report.md
+    await writeFile(
+      join(testVaultPath, "_Tag Audit Report.md"),
+      "# Tag Audit Report\n\nTest content"
+    );
+
+    // Import and test
+    const { checkPlanPrerequisites } = await import("../tagging-agent.js");
+    const result = await checkPlanPrerequisites(testDataPath, testVaultPath);
+    expect(result).toBe(true);
+  });
+
+  test("returns false when audit-data.json missing", async () => {
+    // Ensure audit-data.json doesn't exist
+    try {
+      await rm(join(testDataPath, "audit-data.json"));
+    } catch { /* ignore */ }
+
+    // Create _Tag Audit Report.md
+    await writeFile(
+      join(testVaultPath, "_Tag Audit Report.md"),
+      "# Tag Audit Report\n\nTest content"
+    );
+
+    const { checkPlanPrerequisites } = await import("../tagging-agent.js");
+    const result = await checkPlanPrerequisites(testDataPath, testVaultPath);
+    expect(result).toBe(false);
+  });
+
+  test("returns false when _Tag Audit Report.md missing", async () => {
+    // Create audit-data.json
+    const auditData = {
+      generatedAt: new Date().toISOString(),
+      tagFrequencies: { "test": 1 },
+    };
+    await writeFile(
+      join(testDataPath, "audit-data.json"),
+      JSON.stringify(auditData, null, 2)
+    );
+
+    // Ensure report doesn't exist
+    try {
+      await rm(join(testVaultPath, "_Tag Audit Report.md"));
+    } catch { /* ignore */ }
+
+    const { checkPlanPrerequisites } = await import("../tagging-agent.js");
+    const result = await checkPlanPrerequisites(testDataPath, testVaultPath);
+    expect(result).toBe(false);
+  });
+
+  test("returns false when audit-data.json missing tagFrequencies", async () => {
+    // Create audit-data.json WITHOUT tagFrequencies
+    const auditData = {
+      generatedAt: new Date().toISOString(),
+      mappings: {},
+      // missing tagFrequencies
+    };
+    await writeFile(
+      join(testDataPath, "audit-data.json"),
+      JSON.stringify(auditData, null, 2)
+    );
+
+    // Create report
+    await writeFile(
+      join(testVaultPath, "_Tag Audit Report.md"),
+      "# Tag Audit Report"
+    );
+
+    const { checkPlanPrerequisites } = await import("../tagging-agent.js");
+    const result = await checkPlanPrerequisites(testDataPath, testVaultPath);
+    expect(result).toBe(false);
+  });
+});
+
 describe("NextBatch structure", () => {
   test("NextBatch interface shape is correct", async () => {
     // Test the expected shape of NextBatch

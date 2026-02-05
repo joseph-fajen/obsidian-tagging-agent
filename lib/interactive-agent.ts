@@ -37,6 +37,7 @@ import { createVaultTools } from "../tools/vault-tools.js";
 import { createTagTools } from "../tools/tag-tools.js";
 import { createGitTools } from "../tools/git-tools.js";
 import { createDataTools } from "../tools/data-tools.js";
+import { checkPlanPrerequisites } from "../tagging-agent.js";
 import { join } from "path";
 import { readFile, writeFile, unlink } from "fs/promises";
 import type { MigrationWorklist, NextBatch } from "./worklist-generator.js";
@@ -568,11 +569,22 @@ export async function runInteractiveAgent(config: Config): Promise<void> {
       let notesRemaining = 0;
 
       // Handle different phase types
-      if (phase === "AUDIT" || phase === "PLAN" || phase === "VERIFY") {
-        // LLM phases
+      if (phase === "AUDIT" || phase === "VERIFY") {
+        // LLM phases (no pre-flight needed)
         const result = await runLLMPhase(phase, state.sessionId, config);
         state.sessionId = result.sessionId;
         phaseSuccess = result.success;
+      } else if (phase === "PLAN") {
+        // Plan phase with pre-flight check
+        const prerequisitesMet = await checkPlanPrerequisites(config.dataPath, config.vaultPath);
+        if (!prerequisitesMet) {
+          console.log("\nPlease run the audit phase first to generate the required data.");
+          phaseSuccess = false;
+        } else {
+          const result = await runLLMPhase(phase, state.sessionId, config);
+          state.sessionId = result.sessionId;
+          phaseSuccess = result.success;
+        }
       } else if (phase === "EXECUTE") {
         // Execute phase with batch handling
         const { batch, remaining } = await computeNextBatch(
