@@ -2,13 +2,17 @@
 
 This file tracks the current development state for Claude Code context. It's the single source of truth for what's been implemented, what's pending, and known issues.
 
-**Last Updated:** 2026-02-04
+**Last Updated:** 2026-02-05
 
 ---
 
 ## Current Phase
 
-**Active Work:** Interactive agent experience implemented
+**Active Work:** Path C — Supervisor/Worker Architecture refactor
+
+**Context:** The interactive mode validation (2026-02-04) revealed that Opus 4.5 ignores the pre-computed batch file and does autonomous discovery instead. While work quality is high, costs are 10x target ($1.50 vs $0.15 per batch). We're refactoring to a supervisor/worker architecture where the LLM supervises and code executes.
+
+**Design Doc:** `.agents/plans/path-c-supervisor-worker-architecture.md`
 
 ---
 
@@ -73,6 +77,29 @@ This file tracks the current development state for Claude Code context. It's the
 
 ---
 
+## Pending Plans
+
+| Plan | File | Status | Description |
+|------|------|--------|-------------|
+| Path C: Design Doc | `.agents/plans/path-c-supervisor-worker-architecture.md` | 📋 Design | High-level architecture design |
+| Supervisor/Worker Implementation | `.agents/plans/supervisor-worker-implementation.md` | 🔄 Pending | Detailed implementation plan (16 tasks) |
+
+**Implementation Plan Covers:**
+- Stage 1: Scope Selection — `WorkScope` type, `scopeToNotes()`, conversation flow
+- Stage 2: Preview Mode — `preview_changes` MCP tool, preview formatting
+- Stage 3: Code-Driven Execution — `execute_batch` MCP tool, batch executor
+- Stage 4: Model Optimization — Phase-specific models (Haiku for execute, Sonnet for conversation)
+
+**New Files to Create:**
+- `lib/types.ts` — Shared types (`WorkScope`, `PreviewResult`, `BatchResult`)
+- `lib/scope-filter.ts` — Scope filtering logic
+- `lib/preview-generator.ts` — Preview generation
+- `lib/batch-executor.ts` — Code-driven batch execution
+- `tests/scope-filter.test.ts` — Scope filter tests
+- `tests/batch-executor.test.ts` — Batch executor tests
+
+---
+
 ## Known Issues
 
 ### Recently Fixed (2026-02-03)
@@ -87,7 +114,20 @@ This file tracks the current development state for Claude Code context. It's the
 
 ### Open Issues
 
-(None currently)
+1. **Execute phase ignores pre-computed batch file** — Agent uses autonomous discovery instead
+   - Root cause: Opus 4.5 "thinks it knows better" and overrides instructions
+   - Impact: 10x cost ($1.50 vs $0.15 per batch), progress counter stuck
+   - Resolution: Path C refactor — make execute code-driven, not LLM-driven
+
+2. **Progress counter stuck at "615 remaining"** — Doesn't update during execute
+   - Root cause: Agent writes progress in different format than expected
+   - Impact: User can't see actual progress
+   - Resolution: Will be fixed in Stage 3 of Path C refactor
+
+3. **Batch number always shows "1"** — Even on batch 16, 17
+   - Root cause: `processedCount` stays at 0 due to format mismatch
+   - Impact: Confusing UX
+   - Resolution: Will be fixed in Stage 3 of Path C refactor
 
 ### Documented Decisions
 
