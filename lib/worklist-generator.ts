@@ -208,8 +208,58 @@ export async function generateWorklist(
 }
 
 /**
+ * Extract mappings from various audit-data.json formats.
+ * Supports both the expected format (mappings) and alternative formats
+ * that the interactive agent may produce.
+ */
+function extractMappingsFromAuditData(data: Record<string, unknown>): Record<string, string | null> {
+  const mappings: Record<string, string | null> = {};
+
+  // Expected format: { mappings: { "old-tag": "new-tag" | null } }
+  if (data.mappings && typeof data.mappings === "object") {
+    Object.assign(mappings, data.mappings);
+  }
+
+  // Alternative format: { consolidationOpportunities: { *Priority: [{ migrationMap: {...} }] } }
+  if (data.consolidationOpportunities && typeof data.consolidationOpportunities === "object") {
+    const opportunities = data.consolidationOpportunities as Record<string, unknown>;
+
+    // Process all priority levels (highPriority, mediumPriority, lowPriority)
+    for (const priorityKey of Object.keys(opportunities)) {
+      const priorityItems = opportunities[priorityKey];
+      if (!Array.isArray(priorityItems)) continue;
+
+      for (const item of priorityItems) {
+        if (!item || typeof item !== "object") continue;
+        const itemObj = item as Record<string, unknown>;
+
+        // Extract migrationMap if present
+        if (itemObj.migrationMap && typeof itemObj.migrationMap === "object") {
+          Object.assign(mappings, itemObj.migrationMap);
+        }
+
+        // Extract targetTag for simple consolidations
+        if (typeof itemObj.targetTag === "string" && Array.isArray(itemObj.currentTags)) {
+          const targetTag = itemObj.targetTag as string;
+          for (const oldTag of itemObj.currentTags) {
+            if (typeof oldTag === "string" && oldTag !== targetTag) {
+              mappings[oldTag] = targetTag;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return mappings;
+}
+
+/**
  * Load audit-discovered mappings from data/ directory (or vault for backward compatibility).
  * Returns undefined if the file doesn't exist or can't be parsed.
+ *
+ * Supports both expected format ({ mappings: {...} }) and alternative formats
+ * that the interactive agent may produce ({ consolidationOpportunities: {...} }).
  */
 export async function loadAuditMappings(
   dataPath: string,
@@ -218,9 +268,19 @@ export async function loadAuditMappings(
   // Try data/ first (new location)
   try {
     const raw = await readFile(join(dataPath, "audit-data.json"), "utf-8");
-    const data = JSON.parse(raw);
-    if (data && typeof data.mappings === "object") {
-      return data as AuditMappings;
+    const data = JSON.parse(raw) as Record<string, unknown>;
+
+    // Extract mappings from whatever format the agent used
+    const extractedMappings = extractMappingsFromAuditData(data);
+
+    if (Object.keys(extractedMappings).length > 0) {
+      return { mappings: extractedMappings } as AuditMappings;
+    }
+
+    // Even if no mappings found, the file exists - return empty mappings
+    // so we know audit was run (worklist generator will use hardcoded mappings)
+    if (data) {
+      return { mappings: {} } as AuditMappings;
     }
   } catch {
     // Fall through to vault
@@ -229,9 +289,16 @@ export async function loadAuditMappings(
   // Fallback: try vault (old location)
   try {
     const raw = await readFile(join(vaultPath, "_Tag Audit Data.json"), "utf-8");
-    const data = JSON.parse(raw);
-    if (data && typeof data.mappings === "object") {
-      return data as AuditMappings;
+    const data = JSON.parse(raw) as Record<string, unknown>;
+
+    const extractedMappings = extractMappingsFromAuditData(data);
+
+    if (Object.keys(extractedMappings).length > 0) {
+      return { mappings: extractedMappings } as AuditMappings;
+    }
+
+    if (data) {
+      return { mappings: {} } as AuditMappings;
     }
   } catch {
     // No audit data found

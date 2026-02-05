@@ -189,12 +189,11 @@ describe("checkPlanPrerequisites", () => {
     expect(result).toBe(false);
   });
 
-  test("returns false when audit-data.json missing tagFrequencies", async () => {
-    // Create audit-data.json WITHOUT tagFrequencies
+  test("returns false when audit-data.json has no usable tag data", async () => {
+    // Create audit-data.json with no usable tag data (empty)
     const auditData = {
       generatedAt: new Date().toISOString(),
-      mappings: {},
-      // missing tagFrequencies
+      // No tagFrequencies, tagInventory, completeTagList, or frequencyAnalysis
     };
     await writeFile(
       join(testDataPath, "audit-data.json"),
@@ -210,6 +209,84 @@ describe("checkPlanPrerequisites", () => {
     const { checkPlanPrerequisites } = await import("../tagging-agent.js");
     const result = await checkPlanPrerequisites(testDataPath, testVaultPath);
     expect(result).toBe(false);
+  });
+
+  test("accepts alternative format with tagInventory", async () => {
+    // Create audit-data.json with alternative format (tagInventory)
+    const auditData = {
+      generatedAt: new Date().toISOString(),
+      tagInventory: {
+        totalUniqueTags: 49,
+        frontmatterTags: { count: 42, occurrences: 98 },
+        inlineTags: { count: 9, occurrences: 15 },
+      },
+    };
+    await writeFile(
+      join(testDataPath, "audit-data.json"),
+      JSON.stringify(auditData, null, 2)
+    );
+
+    // Create report
+    await writeFile(
+      join(testVaultPath, "_Tag Audit Report.md"),
+      "# Tag Audit Report"
+    );
+
+    const { checkPlanPrerequisites } = await import("../tagging-agent.js");
+    const result = await checkPlanPrerequisites(testDataPath, testVaultPath);
+    expect(result).toBe(true);
+  });
+
+  test("accepts alternative format with completeTagList", async () => {
+    // Create audit-data.json with alternative format (completeTagList)
+    const auditData = {
+      generatedAt: new Date().toISOString(),
+      completeTagList: {
+        frontmatterTags: ["daily-note", "technical-writing", "todo"],
+        inlineTags: ["ai-tools", "cardano"],
+      },
+    };
+    await writeFile(
+      join(testDataPath, "audit-data.json"),
+      JSON.stringify(auditData, null, 2)
+    );
+
+    // Create report
+    await writeFile(
+      join(testVaultPath, "_Tag Audit Report.md"),
+      "# Tag Audit Report"
+    );
+
+    const { checkPlanPrerequisites } = await import("../tagging-agent.js");
+    const result = await checkPlanPrerequisites(testDataPath, testVaultPath);
+    expect(result).toBe(true);
+  });
+
+  test("accepts alternative format with frequencyAnalysis", async () => {
+    // Create audit-data.json with alternative format (frequencyAnalysis)
+    const auditData = {
+      generatedAt: new Date().toISOString(),
+      frequencyAnalysis: {
+        topTags: [
+          { tag: "daily-note", count: 17 },
+          { tag: "technical-writing", count: 6 },
+        ],
+      },
+    };
+    await writeFile(
+      join(testDataPath, "audit-data.json"),
+      JSON.stringify(auditData, null, 2)
+    );
+
+    // Create report
+    await writeFile(
+      join(testVaultPath, "_Tag Audit Report.md"),
+      "# Tag Audit Report"
+    );
+
+    const { checkPlanPrerequisites } = await import("../tagging-agent.js");
+    const result = await checkPlanPrerequisites(testDataPath, testVaultPath);
+    expect(result).toBe(true);
   });
 });
 

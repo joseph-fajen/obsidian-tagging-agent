@@ -245,6 +245,71 @@ describe("loadAuditMappings", () => {
     await rm(join(testDataPath, "audit-data.json"));
     await rm(join(testVaultPath, "_Tag Audit Data.json"));
   });
+
+  test("extracts mappings from consolidationOpportunities format", async () => {
+    // Create audit-data.json with alternative format (consolidationOpportunities)
+    const auditData = {
+      generatedAt: new Date().toISOString(),
+      consolidationOpportunities: {
+        highPriority: [
+          {
+            category: "Daily Note Variants",
+            targetTag: "type/daily-note",
+            currentTags: ["daily-note", "daily-notes", "daily_log", "daily-reflection"],
+          },
+        ],
+        mediumPriority: [
+          {
+            category: "Project References",
+            migrationMap: {
+              "blockfrost-current-work": "project/blockfrost",
+              "partner-chains-docs": "project/partner-chains",
+            },
+          },
+        ],
+      },
+    };
+    await writeFile(
+      join(testDataPath, "audit-data.json"),
+      JSON.stringify(auditData, null, 2)
+    );
+
+    const result = await loadAuditMappings(testDataPath, testVaultPath);
+    expect(result).toBeDefined();
+
+    // Should extract from migrationMap
+    expect(result!.mappings["blockfrost-current-work"]).toBe("project/blockfrost");
+    expect(result!.mappings["partner-chains-docs"]).toBe("project/partner-chains");
+
+    // Should extract from targetTag + currentTags
+    // All tags in currentTags (including "daily-note") should map to targetTag
+    expect(result!.mappings["daily-note"]).toBe("type/daily-note");
+    expect(result!.mappings["daily-notes"]).toBe("type/daily-note");
+    expect(result!.mappings["daily_log"]).toBe("type/daily-note");
+    expect(result!.mappings["daily-reflection"]).toBe("type/daily-note");
+
+    // Clean up
+    await rm(join(testDataPath, "audit-data.json"));
+  });
+
+  test("returns empty mappings object when file exists but no mappings found", async () => {
+    // Create audit-data.json with no mappings
+    const auditData = {
+      generatedAt: new Date().toISOString(),
+      tagInventory: { totalUniqueTags: 10 },
+    };
+    await writeFile(
+      join(testDataPath, "audit-data.json"),
+      JSON.stringify(auditData, null, 2)
+    );
+
+    const result = await loadAuditMappings(testDataPath, testVaultPath);
+    expect(result).toBeDefined();
+    expect(result!.mappings).toEqual({});
+
+    // Clean up
+    await rm(join(testDataPath, "audit-data.json"));
+  });
 });
 
 describe("formatWorklistMarkdown", () => {

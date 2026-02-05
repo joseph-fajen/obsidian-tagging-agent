@@ -58,11 +58,53 @@ Your task is to scan every note in the vault and catalog all existing tags.
 1. Call \`list_notes({ recursive: true })\` to get the full vault inventory.
 2. For each note, call \`read_note({ path, detail: "minimal" })\` to get its tags.
    - Use "minimal" detail to stay within budget (~50 tokens per note).
+   - Process notes in batches of 100 if needed.
 3. Read the proposed tagging scheme: \`read_note({ path: "${SCHEME_NOTE_PATH}", detail: "full" })\`.
 4. Catalog every unique tag with frequency counts and classification.
 5. Write the audit report to \`_Tag Audit Report.md\`.
-6. Write structured data to \`data/audit-data.json\` for the worklist generator.
+6. Write structured data using this EXACT format:
+   \`\`\`
+   write_data_file({
+     filename: "audit-data.json",
+     content: JSON.stringify({
+       generatedAt: "${today}T...",
+       generatedBy: "audit-phase-agent",
+       totalNotes: <number>,
+       totalTaggedNotes: <number>,
+       uniqueTags: <number>,
+       mappings: {
+         // Tags you discovered and their recommended mappings
+         // Format: "old-tag": "new-tag" or "old-tag": null (to remove)
+       },
+       tagFrequencies: {
+         // ALL tags found with their counts
+         // Format: "tag-name": count
+       }
+     }, null, 2)
+   })
+   \`\`\`
 7. Commit with \`git_commit({ message: "Audit complete: _Tag Audit Report.md" })\`.
+
+### CRITICAL: audit-data.json Schema
+
+The worklist generator REQUIRES this exact structure:
+- \`tagFrequencies\`: Object with all tags as keys, counts as values
+- \`mappings\`: Object with tag mappings (can be empty if unsure)
+
+Example:
+\`\`\`json
+{
+  "tagFrequencies": {
+    "daily-note": 17,
+    "technical-writing": 6,
+    "todo": 3
+  },
+  "mappings": {
+    "daily-note": "type/daily-note",
+    "todo": "status/pending"
+  }
+}
+\`\`\`
 
 ### Key Points
 

@@ -596,17 +596,67 @@ async function checkExecutePrerequisites(dataPath: string, vaultPath: string, ba
 }
 
 /**
+ * Extract tag count from various audit-data.json formats.
+ * Supports both the expected format (tagFrequencies) and alternative formats
+ * that the interactive agent may produce.
+ */
+function extractTagCountFromAuditData(auditData: Record<string, unknown>): number {
+  // Expected format: { tagFrequencies: { "tag": count } }
+  if (auditData.tagFrequencies && typeof auditData.tagFrequencies === "object") {
+    return Object.keys(auditData.tagFrequencies as object).length;
+  }
+
+  // Alternative format: { tagInventory: { totalUniqueTags: number } }
+  if (auditData.tagInventory && typeof auditData.tagInventory === "object") {
+    const inventory = auditData.tagInventory as Record<string, unknown>;
+    if (typeof inventory.totalUniqueTags === "number") {
+      return inventory.totalUniqueTags;
+    }
+  }
+
+  // Alternative format: { completeTagList: { frontmatterTags: [], inlineTags: [] } }
+  if (auditData.completeTagList && typeof auditData.completeTagList === "object") {
+    const tagList = auditData.completeTagList as Record<string, unknown>;
+    const frontmatter = Array.isArray(tagList.frontmatterTags) ? tagList.frontmatterTags : [];
+    const inline = Array.isArray(tagList.inlineTags) ? tagList.inlineTags : [];
+    // Combine and dedupe
+    const allTags = new Set([...frontmatter, ...inline]);
+    return allTags.size;
+  }
+
+  return 0;
+}
+
+/**
+ * Check if audit data has usable tag information.
+ * Returns true if we can extract tag data from either expected or alternative formats.
+ */
+function hasUsableTagData(auditData: Record<string, unknown>): boolean {
+  // Expected format
+  if (auditData.tagFrequencies && typeof auditData.tagFrequencies === "object") {
+    return Object.keys(auditData.tagFrequencies as object).length > 0;
+  }
+
+  // Alternative formats
+  if (auditData.tagInventory || auditData.completeTagList || auditData.frequencyAnalysis) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Pre-flight check for plan mode:
  * 1. Verify audit-data.json exists in data/
  * 2. Verify _Tag Audit Report.md exists in vault
- * 3. Validate audit-data.json has required fields
+ * 3. Validate audit-data.json has usable tag data (flexible format check)
  *
  * Returns true if plan phase should proceed, false if blocking issue.
  */
 export async function checkPlanPrerequisites(dataPath: string, vaultPath: string): Promise<boolean> {
   // Check audit-data.json exists
   const auditDataPath = join(dataPath, "audit-data.json");
-  let auditData: { tagFrequencies?: Record<string, number>; mappings?: Record<string, string | null> } | null = null;
+  let auditData: Record<string, unknown> | null = null;
 
   try {
     const auditDataRaw = await readFile(auditDataPath, "utf-8");
@@ -616,9 +666,9 @@ export async function checkPlanPrerequisites(dataPath: string, vaultPath: string
     return false;
   }
 
-  // Validate audit-data.json has required fields
-  if (!auditData || !auditData.tagFrequencies) {
-    console.error("audit-data.json is missing required 'tagFrequencies' field. Re-run audit phase.\n");
+  // Validate audit-data.json has usable tag data (flexible format check)
+  if (!auditData || !hasUsableTagData(auditData)) {
+    console.error("audit-data.json does not contain usable tag data. Re-run audit phase.\n");
     return false;
   }
 
@@ -632,8 +682,10 @@ export async function checkPlanPrerequisites(dataPath: string, vaultPath: string
   }
 
   // Report what we found
-  const tagCount = Object.keys(auditData.tagFrequencies).length;
-  const mappingCount = auditData.mappings ? Object.keys(auditData.mappings).length : 0;
+  const tagCount = extractTagCountFromAuditData(auditData);
+  const mappingCount = auditData.mappings && typeof auditData.mappings === "object"
+    ? Object.keys(auditData.mappings as object).length
+    : 0;
   console.log(`Found audit data: ${tagCount} unique tags, ${mappingCount} audit-discovered mappings.\n`);
 
   return true;
