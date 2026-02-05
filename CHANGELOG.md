@@ -4,6 +4,62 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-05: Audit Data Format Flexibility & Test Isolation Fixes
+
+### Session Context
+
+While running the interactive mode for the first time after implementing the Supervisor/Worker architecture, two bugs were discovered:
+1. The plan phase failed because `audit-data.json` was in an unexpected format
+2. Source code changes were being bundled into "Tag migration batch" commits during test runs
+
+### Problem 1: Audit Data Format Mismatch
+
+The interactive mode's `buildAuditInstructions()` didn't specify the exact JSON schema for `audit-data.json`, so the audit agent created its own rich format:
+
+| Component | Expected | Agent Wrote |
+|-----------|----------|-------------|
+| Tag frequencies | `{ tagFrequencies: { "tag": count } }` | `{ frequencyAnalysis: { topTags: [...] } }` |
+| Mappings | `{ mappings: { "old": "new" } }` | `{ consolidationOpportunities: { migrationMap: {...} } }` |
+
+This caused `checkPlanPrerequisites()` to reject the audit output with "missing tagFrequencies" error.
+
+### Problem 2: Test Git Pollution
+
+The batch-executor tests used `tests/__batch_test_vault__` as the test directory — inside the project repo. When `executeBatch()` ran `git add -A`, it staged ALL changes in the entire repo (including source code), causing them to be committed with "Tag migration batch" messages.
+
+This resulted in 19 messy commits that bundled unrelated source code changes.
+
+### Solutions Implemented
+
+**For Problem 1:**
+- Made `checkPlanPrerequisites()` flexible to accept alternative formats (`tagInventory`, `completeTagList`, `frequencyAnalysis`)
+- Made `loadAuditMappings()` extract mappings from `consolidationOpportunities` format
+- Updated `buildAuditInstructions()` to specify exact JSON schema for future runs
+
+**For Problem 2:**
+- Changed test to use `mkdtemp()` for temp directories outside any git repo
+- Added `tests/__*__/` to `.gitignore` as safety measure
+- Interactive rebased to clean up the 19 messy commits into 2 proper commits
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `tagging-agent.ts` | Added `extractTagCountFromAuditData()`, `hasUsableTagData()`, flexible `checkPlanPrerequisites()` |
+| `lib/worklist-generator.ts` | Added `extractMappingsFromAuditData()`, flexible `loadAuditMappings()` |
+| `lib/agent-personality.ts` | Updated `buildAuditInstructions()` with exact JSON schema |
+| `tests/preflight.test.ts` | Added 4 tests for alternative format handling |
+| `tests/worklist-generator.test.ts` | Added 3 tests for mapping extraction from alternative formats |
+| `tests/batch-executor.test.ts` | Changed to use `mkdtemp()` for isolated temp directories |
+| `.gitignore` | Added `tests/__*__/` pattern |
+
+### Commits
+
+- `1dcaf49` fix: accept alternative audit-data.json formats from interactive mode
+- `4561457` fix: prevent batch-executor tests from polluting git history
+
+---
+
 ## 2026-02-05: Plan Phase Optimization — Use Audit Data Instead of Re-scanning
 
 ### Session Context
