@@ -62,7 +62,7 @@ The Supervisor/Worker architecture (Path C) is now fully implemented. The execut
 
 ### Tests ✅
 
-- 275+ tests passing across 19 test files
+- 285 tests passing across 19 test files
 - `bun test` runs successfully
 
 ---
@@ -80,6 +80,7 @@ The Supervisor/Worker architecture (Path C) is now fully implemented. The execut
 | Move JSON to Project Directory | `.agents/plans/move-json-to-project-directory.md` | ✅ Yes |
 | Interactive Agent Experience | `.agents/plans/interactive-agent-experience.md` | ✅ Yes |
 | Supervisor/Worker Architecture | `.agents/plans/supervisor-worker-implementation.md` | ✅ Yes |
+| Plan Phase Audit Data Usage | `.agents/plans/fix-plan-phase-audit-data-usage.md` | ✅ Yes |
 
 ---
 
@@ -87,15 +88,20 @@ The Supervisor/Worker architecture (Path C) is now fully implemented. The execut
 
 ### Recently Fixed (2026-02-05)
 
-1. **Execute phase ignores pre-computed batch file** — Fixed by Supervisor/Worker architecture
+1. **Plan phase re-scans notes instead of using audit data** — Fixed
+   - Plan now uses `read_data_file` to read `audit-data.json` first
+   - Added `checkPlanPrerequisites()` pre-flight check
+   - Reduced plan phase from ~$0.85/60s to ~$0.15-0.25/15-20s
+
+2. **Execute phase ignores pre-computed batch file** — Fixed by Supervisor/Worker architecture
    - Execute now uses `execute_batch` tool for code-driven execution
    - LLM supervises, code executes — no more autonomous discovery
 
-2. **Progress counter stuck at "615 remaining"** — Fixed
+3. **Progress counter stuck at "615 remaining"** — Fixed
    - `get_progress` tool provides accurate progress tracking
    - Progress file updated automatically by `execute_batch`
 
-3. **Batch number always shows "1"** — Fixed
+4. **Batch number always shows "1"** — Fixed
    - Batch numbers tracked in `MigrationProgress.batchHistory`
 
 ### Recently Fixed (2026-02-03)

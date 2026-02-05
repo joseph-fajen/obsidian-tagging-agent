@@ -4,6 +4,63 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-05: Plan Phase Optimization — Use Audit Data Instead of Re-scanning
+
+### Session Context
+
+After implementing the Supervisor/Worker architecture for execute phase, analysis revealed the plan phase was also inefficient — re-scanning all vault notes (100+ `read_note` calls) instead of using the `audit-data.json` file that the audit phase already created.
+
+### Problem Statement
+
+The `buildPlanSystemPrompt()` function:
+1. Listed `list_notes`, `read_note`, `search_notes` as available tools (implying they should be used)
+2. Never mentioned `read_data_file` or `audit-data.json`
+3. Only told the agent to read the markdown report, not the structured JSON data
+4. Had no constraint preventing re-scanning notes
+
+As a result, the LLM agent made 100+ unnecessary tool calls to gather data that already existed, costing ~$0.85 and taking ~60 seconds instead of ~$0.15-0.25 and ~15 seconds.
+
+### Solution Implemented
+
+1. **Updated `buildPlanSystemPrompt()`** to prioritize `read_data_file` for `audit-data.json`
+2. **Added "Critical Constraint"** section explicitly forbidding re-scanning notes
+3. **De-prioritized tools** — `list_notes` and `search_notes` marked as "not needed"
+4. **Created `checkPlanPrerequisites()`** pre-flight function to validate audit outputs exist
+5. **Integrated pre-flight** in both CLI and interactive modes
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `tagging-agent.ts` | Updated `buildPlanSystemPrompt()`, added `checkPlanPrerequisites()`, CLI pre-flight |
+| `lib/interactive-agent.ts` | Added pre-flight check before PLAN phase |
+| `tests/preflight.test.ts` | Added 4 tests for `checkPlanPrerequisites` |
+| `tests/agent-prompts.test.ts` | Added 6 tests for new prompt content |
+
+### Tests Added
+
+- `checkPlanPrerequisites > returns true when all audit outputs exist`
+- `checkPlanPrerequisites > returns false when audit-data.json missing`
+- `checkPlanPrerequisites > returns false when _Tag Audit Report.md missing`
+- `checkPlanPrerequisites > returns false when audit-data.json missing tagFrequencies`
+- `buildPlanSystemPrompt > prioritizes read_data_file for audit-data.json`
+- `buildPlanSystemPrompt > contains Critical Constraint section forbidding re-scan`
+- Plus 4 more prompt content tests
+
+### Estimated Impact
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Plan phase tool calls | 100+ | ~5-10 |
+| Plan phase cost | ~$0.85 | ~$0.15-0.25 |
+| Plan phase duration | ~60s | ~15-20s |
+
+### Commits
+
+- `8f9e7e7` fix: optimize plan phase to use audit-data.json instead of re-scanning notes
+
+---
+
 ## 2026-02-05: Supervisor/Worker Architecture Implementation
 
 ### Session Context

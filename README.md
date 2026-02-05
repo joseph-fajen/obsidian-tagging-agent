@@ -81,7 +81,7 @@ bun run tagging-agent.ts audit
 
 ### Phase 2: Plan
 
-Reads the audit report and proposed tagging scheme, then generates a per-note migration plan mapping every old tag to a new tag (or removal).
+Reads the audit data (`data/audit-data.json`) and proposed tagging scheme, then generates a migration plan with a tag mapping table. Uses the structured audit data directly instead of re-scanning notes.
 
 ```bash
 bun run tagging-agent.ts plan
@@ -163,7 +163,7 @@ Each invocation respects `MAX_BUDGET_USD`. Typical costs:
 |-------|----------|
 | Audit | ~$0.30-0.50 (reads all 884 notes at minimal detail) |
 | Generate Worklist | $0.00 (no LLM) |
-| Plan | ~$0.30-0.50 (reads audit report + scheme, writes plan) |
+| Plan | ~$0.15-0.25 (reads audit-data.json + scheme, writes plan) |
 | Execute (per batch of 50) | ~$0.10-0.15 (supervisor/worker: LLM supervises, code executes) |
 | Verify | ~$0.30-0.50 (reads all notes at minimal detail) |
 
@@ -197,7 +197,7 @@ tools/
   tag-tools.ts            # apply_tag_changes, preview_changes, execute_batch, get_progress
   git-tools.ts            # git_commit
   data-tools.ts           # read_data_file, write_data_file
-tests/                    # bun test files (275+ tests)
+tests/                    # bun test files (285 tests)
 data/                     # Runtime data (git-ignored, see below)
 .agents/
   plans/                  # Implementation plans (all marked IMPLEMENTED)
