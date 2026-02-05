@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
-import { mkdir, writeFile, rm, readFile } from "fs/promises";
+import { mkdir, writeFile, rm, readFile, mkdtemp } from "fs/promises";
 import { join } from "path";
+import { tmpdir } from "os";
 import {
   executeBatch,
   getProgress,
@@ -10,12 +11,13 @@ import {
 } from "../lib/batch-executor.js";
 import type { BatchEntry } from "../lib/types.js";
 
-// Test vault and data directory paths
-const TEST_VAULT_PATH = join(import.meta.dir, "__batch_test_vault__");
-const TEST_DATA_PATH = join(import.meta.dir, "__batch_test_data__");
+// Test vault and data directory paths — use temp directories OUTSIDE the project repo
+// to prevent git operations from affecting the project's git history
+let TEST_VAULT_PATH: string;
+let TEST_DATA_PATH: string;
 
-// Note: Git operations in executeBatch will fail in test vault that's not a git repo
-// We test the core functionality; git commit returns null in that case
+// Note: Git operations in executeBatch will return null in test vault that's not a git repo
+// This is the desired behavior for tests — we test core functionality without git side effects
 
 async function createTestVault() {
   await mkdir(TEST_VAULT_PATH, { recursive: true });
@@ -67,7 +69,9 @@ async function cleanupTestDirectories() {
 }
 
 beforeAll(async () => {
-  await cleanupTestDirectories();
+  // Create temp directories outside the project repo
+  TEST_VAULT_PATH = await mkdtemp(join(tmpdir(), "batch-test-vault-"));
+  TEST_DATA_PATH = await mkdtemp(join(tmpdir(), "batch-test-data-"));
   await createTestVault();
 });
 
