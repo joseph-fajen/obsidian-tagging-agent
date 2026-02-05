@@ -310,6 +310,54 @@ describe("getProgress / clearProgress", () => {
     expect(progress!.batchHistory[1].batchNumber).toBe(2);
     expect(progress!.processedCount).toBe(2);
   });
+
+  test("handles old format progress file gracefully", async () => {
+    // Write an old format progress file (missing processedPaths, batchHistory, etc.)
+    const oldFormatProgress = {
+      lastUpdated: "2026-02-04",
+      totalBatches: 5,
+      notesProcessed: 100,
+      batches: [{ batchNumber: 1, status: "completed" }],
+      completedMigrations: ["daily-reflection"],
+    };
+    const progressPath = join(TEST_DATA_PATH, "migration-progress.json");
+    await writeFile(progressPath, JSON.stringify(oldFormatProgress), "utf-8");
+
+    // getProgress should return a valid MigrationProgress with defaults
+    const progress = await getProgress(TEST_DATA_PATH);
+    expect(progress).not.toBeNull();
+    expect(progress!.processedPaths).toEqual([]); // Default to empty array
+    expect(progress!.batchHistory).toEqual([]); // Default to empty array
+    expect(progress!.processedCount).toBe(0); // Default to 0
+    expect(progress!.scope).toEqual({ type: "full" }); // Default scope
+  });
+
+  test("executeBatch handles old format progress file without crashing", async () => {
+    // Write an old format progress file
+    const oldFormatProgress = {
+      lastUpdated: "2026-02-04",
+      notesProcessed: 100,
+    };
+    const progressPath = join(TEST_DATA_PATH, "migration-progress.json");
+    await writeFile(progressPath, JSON.stringify(oldFormatProgress), "utf-8");
+
+    // executeBatch should NOT crash — it should initialize missing fields
+    const entries: BatchEntry[] = [
+      {
+        path: "note1.md",
+        changes: [{ oldTag: "daily-reflection", newTag: "type/daily-note" }],
+      },
+    ];
+
+    const result = await executeBatch(TEST_VAULT_PATH, TEST_DATA_PATH, entries, 1);
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(0);
+
+    // Progress should now have proper format
+    const progress = await getProgress(TEST_DATA_PATH);
+    expect(progress!.processedPaths).toContain("note1.md");
+    expect(progress!.batchHistory.length).toBe(1);
+  });
 });
 
 // ============================================================================

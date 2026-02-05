@@ -201,9 +201,22 @@ async function updateProgress(
   let progress: MigrationProgress;
   try {
     const raw = await readFile(progressPath, "utf-8");
-    progress = JSON.parse(raw) as MigrationProgress;
+    const parsed = JSON.parse(raw);
+
+    // Defensive initialization: ensure all required fields exist
+    // This handles old format files or corrupted data gracefully
+    progress = {
+      migrationId: parsed.migrationId ?? `migration-${Date.now()}`,
+      scope: parsed.scope ?? scope ?? { type: "full" },
+      startedAt: parsed.startedAt ?? now,
+      lastUpdatedAt: parsed.lastUpdatedAt ?? now,
+      totalInScope: parsed.totalInScope ?? 0,
+      processedCount: parsed.processedCount ?? 0,
+      processedPaths: Array.isArray(parsed.processedPaths) ? parsed.processedPaths : [],
+      batchHistory: Array.isArray(parsed.batchHistory) ? parsed.batchHistory : [],
+    };
   } catch {
-    // Create new progress
+    // Create new progress (file doesn't exist or is invalid JSON)
     progress = {
       migrationId: `migration-${Date.now()}`,
       scope: scope ?? { type: "full" },
@@ -239,12 +252,25 @@ async function updateProgress(
 /**
  * Get current migration progress.
  * Returns null if no migration is in progress.
+ * Handles old format files gracefully by initializing missing fields.
  */
 export async function getProgress(dataPath: string): Promise<MigrationProgress | null> {
   const progressPath = join(dataPath, PROGRESS_FILENAME);
   try {
     const raw = await readFile(progressPath, "utf-8");
-    return JSON.parse(raw) as MigrationProgress;
+    const parsed = JSON.parse(raw);
+
+    // Defensive initialization for old format files
+    return {
+      migrationId: parsed.migrationId ?? `migration-unknown`,
+      scope: parsed.scope ?? { type: "full" },
+      startedAt: parsed.startedAt ?? new Date().toISOString(),
+      lastUpdatedAt: parsed.lastUpdatedAt ?? new Date().toISOString(),
+      totalInScope: parsed.totalInScope ?? 0,
+      processedCount: parsed.processedCount ?? 0,
+      processedPaths: Array.isArray(parsed.processedPaths) ? parsed.processedPaths : [],
+      batchHistory: Array.isArray(parsed.batchHistory) ? parsed.batchHistory : [],
+    };
   } catch {
     return null;
   }
