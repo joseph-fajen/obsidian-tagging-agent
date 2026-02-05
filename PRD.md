@@ -295,6 +295,62 @@ claude-agent-sdk-proactive-agent/
   - `git_commit({ message: "Pre-migration checkpoint: audit complete" })`
   - `git_commit({ message: "Tag migration batch 1/18: daily journal notes (50 notes)" })`
 
+#### `preview_changes`
+- **Summary:** Preview tag changes for a scope without applying them.
+- **Use this when:**
+  - User wants to see what changes will be made before executing
+  - Validating that the scope selection is correct
+  - Explaining the migration plan to the user
+- **Do NOT use this for:**
+  - Actually applying changes (use `execute_batch` instead)
+  - Getting a count of notes (use `list_notes` with scope filtering)
+- **Input:** `{ scope: WorkScope, limit?: number }`
+  - `scope.type`: "full" | "folder" | "files" | "recent" | "tag"
+  - `scope.path`: folder path (for folder scope)
+  - `scope.paths`: array of file paths (for files scope)
+  - `scope.days`: number of days (for recent scope)
+  - `scope.tagName`: tag to filter by (for tag scope)
+  - `limit`: max notes to preview (default 10)
+- **Output:** `{ success: boolean, preview: PreviewResult, displayText: string, summary: string }`
+- **Performance notes:** ~50-200ms for 10 notes. Returns ~100 tokens per note. Cost: ~$0.01 for supervisor to process.
+- **Examples:**
+  - `preview_changes({ scope: { type: "full" }, limit: 5 })` — sample vault
+  - `preview_changes({ scope: { type: "folder", path: "Journal" }, limit: 20 })` — preview folder
+  - `preview_changes({ scope: { type: "recent", days: 7 }, limit: 10 })` — recent notes
+
+#### `execute_batch`
+- **Summary:** Execute a batch of tag changes deterministically (no LLM per-note).
+- **Use this when:**
+  - Ready to apply tag changes after preview/confirmation
+  - Processing a batch of notes from the worklist
+  - Resuming a migration after pause
+- **Do NOT use this for:**
+  - Previewing changes (use `preview_changes`)
+  - Single-note changes (use `apply_tag_changes` for one-offs)
+- **Input:** `{ entries: BatchEntry[], batchNumber: number }`
+  - `entries`: array of `{ path: string, changes: TagChange[] }`
+  - `batchNumber`: for progress tracking and commit message
+- **Output:** `{ success: boolean, result: BatchResult, summary: string }`
+- **Performance notes:** ~2-5 seconds for 50 notes. Creates git commit. Updates progress file. Cost: $0.00 (no LLM).
+- **Examples:**
+  - `execute_batch({ entries: [...], batchNumber: 1 })` — execute first batch
+  - `execute_batch({ entries: nextBatch.entries, batchNumber: 5 })` — continue migration
+
+#### `get_progress`
+- **Summary:** Get current migration progress.
+- **Use this when:**
+  - Checking how much work remains before starting
+  - Resuming a paused migration
+  - Reporting progress to user
+- **Do NOT use this for:**
+  - Previewing changes (use `preview_changes`)
+  - Executing batches (use `execute_batch`)
+- **Input:** `{}`
+- **Output:** `{ hasProgress: boolean, progress?: MigrationProgress, summary: string }`
+- **Performance notes:** Instant (~5ms). Returns ~200 tokens. Cost: $0.00.
+- **Examples:**
+  - `get_progress({})` — check if migration in progress
+
 ## 8. Technology Stack
 
 ### Runtime & Language
@@ -333,7 +389,7 @@ Environment variables (`.env`):
 VAULT_PATH="/Users/josephfajen/git/obsidian-jpf"
 
 # Agent execution mode
-AGENT_MODE="audit"  # audit | plan | execute | verify
+AGENT_MODE="audit"  # audit | plan | execute | verify | interactive
 
 # Batch size for execute mode
 BATCH_SIZE=50
@@ -341,8 +397,15 @@ BATCH_SIZE=50
 # Maximum budget per run (USD)
 MAX_BUDGET_USD=1.00
 
-# Model to use
+# Model to use (default for all phases)
 AGENT_MODEL="claude-sonnet-4-20250514"
+
+# Phase-specific models (optional, for cost optimization)
+# AUDIT_MODEL="claude-sonnet-4-20250514"
+# PLAN_MODEL="claude-sonnet-4-20250514"
+# EXECUTE_MODEL="claude-haiku-4-5-20251001"  # Cheaper for execute supervision
+# VERIFY_MODEL="claude-sonnet-4-20250514"
+# CONVERSATION_MODEL="claude-sonnet-4-20250514"
 ```
 
 ### Security Scope

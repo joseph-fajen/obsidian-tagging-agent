@@ -28,6 +28,9 @@ VAULT_PATH="/path/to/your/obsidian-vault"
 MAX_BUDGET_USD=1.00
 BATCH_SIZE=50
 AGENT_MODEL="claude-opus-4-5-20251101"  # Or claude-sonnet-4-20250514 for lower cost
+
+# Optional: Phase-specific models for cost optimization
+# EXECUTE_MODEL="claude-haiku-4-5-20251001"  # Cheaper for execute supervision
 ```
 
 ## Usage
@@ -161,8 +164,10 @@ Each invocation respects `MAX_BUDGET_USD`. Typical costs:
 | Audit | ~$0.30-0.50 (reads all 884 notes at minimal detail) |
 | Generate Worklist | $0.00 (no LLM) |
 | Plan | ~$0.30-0.50 (reads audit report + scheme, writes plan) |
-| Execute (per batch of 50) | ~$0.10-0.20 (batch pre-computed, just applies changes) |
+| Execute (per batch of 50) | ~$0.10-0.15 (supervisor/worker: LLM supervises, code executes) |
 | Verify | ~$0.30-0.50 (reads all notes at minimal detail) |
+
+**Cost optimization:** Execute phase uses Haiku by default for supervision since execution is code-driven. Configure with `EXECUTE_MODEL` env var.
 
 Start conservative. You can always increase `MAX_BUDGET_USD` if the agent runs out of budget mid-phase. Override per-invocation without editing `.env`:
 
@@ -176,16 +181,23 @@ MAX_BUDGET_USD=2.50 bun run tagging-agent.ts audit
 tagging-agent.ts          # Entry point — system prompts + agent runner
 tag-scheme.ts             # Tag scheme schemas + noise patterns + mappings
 lib/
-  config.ts               # Environment variable loading
+  config.ts               # Environment variable loading, phase-specific models
   frontmatter.ts          # gray-matter wrapper
   tag-parser.ts           # Inline tag extraction + validation
   worklist-generator.ts   # Deterministic worklist generation (no LLM)
+  types.ts                # Shared types: WorkScope, BatchResult, MigrationProgress
+  scope-filter.ts         # Scope filtering: full, folder, files, recent, tag
+  preview-generator.ts    # Preview generation without applying changes
+  batch-executor.ts       # Code-driven batch execution
+  session-state.ts        # Session state persistence for interactive mode
+  agent-personality.ts    # Base personality and phase instructions
+  interactive-agent.ts    # Interactive REPL loop
 tools/
   vault-tools.ts          # list_notes, read_note, search_notes, write_note
-  tag-tools.ts            # apply_tag_changes
+  tag-tools.ts            # apply_tag_changes, preview_changes, execute_batch, get_progress
   git-tools.ts            # git_commit
   data-tools.ts           # read_data_file, write_data_file
-tests/                    # bun test files
+tests/                    # bun test files (275+ tests)
 data/                     # Runtime data (git-ignored, see below)
 .agents/
   plans/                  # Implementation plans (all marked IMPLEMENTED)

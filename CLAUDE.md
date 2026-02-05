@@ -52,17 +52,25 @@ tagging-agent.ts          # ENTRY POINT — system prompts, agent runner, recove
 tag-scheme.ts             # Tag mappings, validation, noise patterns
 
 lib/
-  config.ts               # Environment loading, mode validation
+  config.ts               # Environment loading, mode validation, phase-specific models
   frontmatter.ts          # gray-matter wrapper
   tag-parser.ts           # Inline tag extraction, noise detection
   worklist-generator.ts   # Deterministic worklist (no LLM)
+  types.ts                # Shared types: WorkScope, BatchResult, MigrationProgress
+  scope-filter.ts         # Scope filtering: full, folder, files, recent, tag
+  preview-generator.ts    # Preview generation without applying changes
+  batch-executor.ts       # Code-driven batch execution
+  session-state.ts        # Session state persistence for interactive mode
+  agent-personality.ts    # Base personality and phase instructions
+  interactive-agent.ts    # Interactive REPL loop
 
 tools/
   vault-tools.ts          # MCP: list_notes, read_note, search_notes, write_note
-  tag-tools.ts            # MCP: apply_tag_changes
+  tag-tools.ts            # MCP: apply_tag_changes, preview_changes, execute_batch, get_progress
   git-tools.ts            # MCP: git_commit
+  data-tools.ts           # MCP: read_data_file, write_data_file
 
-tests/                    # bun test files (test-*.ts pattern)
+tests/                    # bun test files (275+ tests)
 
 .agents/
   plans/                  # Implementation plans — CHECK STATUS HEADER before implementing!
@@ -229,11 +237,17 @@ bun install                 # Install dependencies
 VAULT_PATH="/path/to/vault"           # Required
 MAX_BUDGET_USD=1.00                   # Budget per invocation
 BATCH_SIZE=50                         # Notes per execute batch
-AGENT_MODEL="claude-sonnet-4-20250514" # Model to use
+AGENT_MODEL="claude-sonnet-4-20250514" # Default model
+
+# Phase-specific models (optional)
+EXECUTE_MODEL="claude-haiku-4-5-20251001"  # Cheaper for execute supervision
 ```
 
 ### Key Files to Know
-- `tagging-agent.ts:15-403` — System prompts for each mode
-- `tag-scheme.ts:42-93` — Hardcoded tag mappings
+- `tagging-agent.ts` — Entry point, system prompts, agent runner
+- `tag-scheme.ts` — Hardcoded tag mappings and noise patterns
 - `lib/worklist-generator.ts` — Deterministic worklist (no LLM)
-- `lib/tag-parser.ts:1` — VALID_PREFIXES array
+- `lib/batch-executor.ts` — Code-driven batch execution
+- `lib/scope-filter.ts` — Scope filtering for preview/execute
+- `lib/types.ts` — Shared types: WorkScope, BatchResult, MigrationProgress
+- `lib/tag-parser.ts` — VALID_PREFIXES, noise detection

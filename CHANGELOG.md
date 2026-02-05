@@ -4,6 +4,88 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-05: Supervisor/Worker Architecture Implementation
+
+### Session Context
+
+The interactive mode validation (2026-02-04) revealed that Opus 4.5 ignores the pre-computed batch file and does autonomous discovery instead. While work quality was high, costs were 10x target ($1.50 vs $0.15 per batch). This prompted a refactor to a Supervisor/Worker architecture.
+
+### Problem Statement
+
+The execute phase was LLM-driven per-note, causing:
+1. 10x cost overrun ($1.50 vs $0.15 per batch)
+2. Progress counter stuck (agent writes progress in different format)
+3. Batch number always shows "1" (processedCount stays at 0)
+4. Unpredictable execution (LLM "thinks it knows better")
+
+### Solution Implemented
+
+Implemented Path C from the supervisor-worker architecture design:
+- **LLM (Supervisor)** handles: conversation, intent parsing, scope selection, exception handling
+- **Code (Worker)** handles: deterministic execution, progress tracking, git commits
+
+#### Stage 1: Foundation — Types and Scope Filtering
+- Created `lib/types.ts` with shared types: `WorkScope`, `NotePreview`, `PreviewResult`, `BatchResult`, `MigrationProgress`
+- Created `lib/scope-filter.ts` with `scopeToNotes()` for filtering by: full vault, folder, files, recent, tag
+- Updated `lib/worklist-generator.ts` to accept optional `scope` parameter
+
+#### Stage 2: Preview Mode
+- Created `lib/preview-generator.ts` with `generatePreview()` and `formatPreviewForDisplay()`
+- Added `preview_changes` MCP tool to show what will change without applying
+
+#### Stage 3: Code-Driven Execution
+- Created `lib/batch-executor.ts` with `executeBatch()`, `getProgress()`, `clearProgress()`
+- Added `execute_batch` MCP tool for deterministic batch processing
+- Added `get_progress` MCP tool for accurate progress tracking
+
+#### Stage 4: Model Optimization
+- Added `ModelsByPhase` type to `lib/config.ts`
+- Updated `lib/interactive-agent.ts` to use phase-specific models (Haiku for execute)
+- Updated `.env.example` with phase-specific model configuration
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/types.ts` | Created — shared types for Supervisor/Worker |
+| `lib/scope-filter.ts` | Created — scope filtering logic |
+| `lib/preview-generator.ts` | Created — preview generation |
+| `lib/batch-executor.ts` | Created — code-driven batch execution |
+| `tools/tag-tools.ts` | Added 3 new tools: preview_changes, execute_batch, get_progress |
+| `lib/config.ts` | Added ModelsByPhase for phase-specific models |
+| `lib/session-state.ts` | Added selectedScope field |
+| `lib/agent-personality.ts` | Updated execute instructions and added scope selection |
+| `lib/interactive-agent.ts` | Added phase-specific model selection |
+| `lib/worklist-generator.ts` | Added scope parameter |
+| `tagging-agent.ts` | Updated tool registration |
+| `.env.example` | Added phase-specific model vars |
+| `tests/scope-filter.test.ts` | Created — 26 tests |
+| `tests/batch-executor.test.ts` | Created — 26 tests |
+| `tests/agent-personality.test.ts` | Updated for new instructions |
+| `tests/agent-prompts.test.ts` | Updated mock config |
+| `tests/tools-smoke.test.ts` | Updated tool count |
+
+### Tests Added
+
+- 26 tests for scope filtering (all scope types, edge cases)
+- 26 tests for batch execution (success, failures, progress tracking)
+- Updated existing tests for new Config shape
+
+### Estimated Impact
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Cost per batch | ~$1.50 | ~$0.15 |
+| Progress tracking | Broken | Accurate |
+| Execution | Unpredictable | Deterministic |
+| Resume capability | Partial | Full |
+
+### Commits
+
+- `a2d3a0c` feat: implement supervisor/worker architecture for execute phase
+
+---
+
 ## 2026-02-04: Interactive Agent Experience
 
 ### Session Context

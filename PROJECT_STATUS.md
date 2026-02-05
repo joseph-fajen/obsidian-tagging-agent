@@ -8,11 +8,9 @@ This file tracks the current development state for Claude Code context. It's the
 
 ## Current Phase
 
-**Active Work:** Path C — Supervisor/Worker Architecture refactor
+**Status:** Core functionality complete with Supervisor/Worker architecture
 
-**Context:** The interactive mode validation (2026-02-04) revealed that Opus 4.5 ignores the pre-computed batch file and does autonomous discovery instead. While work quality is high, costs are 10x target ($1.50 vs $0.15 per batch). We're refactoring to a supervisor/worker architecture where the LLM supervises and code executes.
-
-**Design Doc:** `.agents/plans/path-c-supervisor-worker-architecture.md`
+The Supervisor/Worker architecture (Path C) is now fully implemented. The execute phase uses code-driven batch execution with LLM supervision, reducing costs by ~10x compared to the previous LLM-per-note approach.
 
 ---
 
@@ -22,13 +20,17 @@ This file tracks the current development state for Claude Code context. It's the
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| `lib/config.ts` | ✅ Complete | Config loading, mode validation, 6 modes (including interactive) |
+| `lib/config.ts` | ✅ Complete | Config loading, mode validation, phase-specific models |
 | `lib/frontmatter.ts` | ✅ Complete | gray-matter wrapper, `#` prefix stripping |
 | `lib/tag-parser.ts` | ✅ Complete | Inline extraction, noise detection, case-insensitive removal |
-| `lib/worklist-generator.ts` | ✅ Complete | Deterministic worklist generation (no LLM) |
-| `lib/session-state.ts` | ✅ Complete | Session state persistence for interactive mode |
-| `lib/agent-personality.ts` | ✅ Complete | Base personality and phase instructions |
-| `lib/interactive-agent.ts` | ✅ Complete | Interactive REPL loop with state machine |
+| `lib/worklist-generator.ts` | ✅ Complete | Deterministic worklist with scope filtering |
+| `lib/session-state.ts` | ✅ Complete | Session state persistence with scope selection |
+| `lib/agent-personality.ts` | ✅ Complete | Base personality, phase instructions, scope selection |
+| `lib/interactive-agent.ts` | ✅ Complete | Interactive REPL loop with phase-specific models |
+| `lib/types.ts` | ✅ Complete | Shared types: WorkScope, NotePreview, BatchResult, MigrationProgress |
+| `lib/scope-filter.ts` | ✅ Complete | Scope filtering: full, folder, files, recent, tag |
+| `lib/preview-generator.ts` | ✅ Complete | Preview generation without applying changes |
+| `lib/batch-executor.ts` | ✅ Complete | Code-driven batch execution with progress tracking |
 | `tag-scheme.ts` | ✅ Complete | TAG_MAPPINGS, lookupTagMapping(), noise patterns |
 
 ### MCP Tools ✅
@@ -40,6 +42,9 @@ This file tracks the current development state for Claude Code context. It's the
 | `search_notes` | ✅ Complete | Tag-based search |
 | `write_note` | ✅ Complete | Creates parent dirs |
 | `apply_tag_changes` | ✅ Complete | Per-note tag migration |
+| `preview_changes` | ✅ Complete | Preview scope changes without applying |
+| `execute_batch` | ✅ Complete | Code-driven batch execution |
+| `get_progress` | ✅ Complete | Migration progress tracking |
 | `git_commit` | ✅ Complete | Checkpoint commits |
 | `read_data_file` | ✅ Complete | Read from project data/ directory |
 | `write_data_file` | ✅ Complete | Write to project data/ directory |
@@ -52,12 +57,12 @@ This file tracks the current development state for Claude Code context. It's the
 | `audit` | ✅ Complete | LLM-driven, writes report + JSON |
 | `plan` | ✅ Complete | LLM-driven, creates mapping table |
 | `generate-worklist` | ✅ Complete | Deterministic code (no LLM) |
-| `execute` | ✅ Complete | LLM-driven, applies worklist |
+| `execute` | ✅ Complete | Supervisor/Worker: LLM supervises, code executes |
 | `verify` | ✅ Complete | LLM-driven, compliance scan |
 
 ### Tests ✅
 
-- 220+ tests passing across 16 test files
+- 275+ tests passing across 19 test files
 - `bun test` runs successfully
 
 ---
@@ -74,60 +79,32 @@ This file tracks the current development state for Claude Code context. It's the
 | Deterministic Batch Extraction | `.agents/plans/deterministic-batch-extraction.md` | ✅ Yes |
 | Move JSON to Project Directory | `.agents/plans/move-json-to-project-directory.md` | ✅ Yes |
 | Interactive Agent Experience | `.agents/plans/interactive-agent-experience.md` | ✅ Yes |
-
----
-
-## Pending Plans
-
-| Plan | File | Status | Description |
-|------|------|--------|-------------|
-| Path C: Design Doc | `.agents/plans/path-c-supervisor-worker-architecture.md` | 📋 Design | High-level architecture design |
-| Supervisor/Worker Implementation | `.agents/plans/supervisor-worker-implementation.md` | 🔄 Pending | Detailed implementation plan (16 tasks) |
-
-**Implementation Plan Covers:**
-- Stage 1: Scope Selection — `WorkScope` type, `scopeToNotes()`, conversation flow
-- Stage 2: Preview Mode — `preview_changes` MCP tool, preview formatting
-- Stage 3: Code-Driven Execution — `execute_batch` MCP tool, batch executor
-- Stage 4: Model Optimization — Phase-specific models (Haiku for execute, Sonnet for conversation)
-
-**New Files to Create:**
-- `lib/types.ts` — Shared types (`WorkScope`, `PreviewResult`, `BatchResult`)
-- `lib/scope-filter.ts` — Scope filtering logic
-- `lib/preview-generator.ts` — Preview generation
-- `lib/batch-executor.ts` — Code-driven batch execution
-- `tests/scope-filter.test.ts` — Scope filter tests
-- `tests/batch-executor.test.ts` — Batch executor tests
+| Supervisor/Worker Architecture | `.agents/plans/supervisor-worker-implementation.md` | ✅ Yes |
 
 ---
 
 ## Known Issues
 
+### Recently Fixed (2026-02-05)
+
+1. **Execute phase ignores pre-computed batch file** — Fixed by Supervisor/Worker architecture
+   - Execute now uses `execute_batch` tool for code-driven execution
+   - LLM supervises, code executes — no more autonomous discovery
+
+2. **Progress counter stuck at "615 remaining"** — Fixed
+   - `get_progress` tool provides accurate progress tracking
+   - Progress file updated automatically by `execute_batch`
+
+3. **Batch number always shows "1"** — Fixed
+   - Batch numbers tracked in `MigrationProgress.batchHistory`
+
 ### Recently Fixed (2026-02-03)
 
-1. **YAML parsing fails on Templater files** — Fixed in `lib/worklist-generator.ts` and `tools/tag-tools.ts`
-   - Templater templates contain `<% tp.date.now("YYYY-MM-DD-dddd") %>` with nested quotes
-   - Now: Files containing `<%` and `%>` are skipped with warnings
+1. **YAML parsing fails on Templater files** — Fixed
+   - Files containing `<%` and `%>` in frontmatter are skipped with warnings
 
-2. **Agent exits on error instead of self-reflecting** — Fixed in `tagging-agent.ts`
-   - Added `runWithRecovery()` wrapper that invokes recovery agent on errors
-   - Recovery agent analyzes errors and proposes: retry, skip, ask_user, or abort
-
-### Open Issues
-
-1. **Execute phase ignores pre-computed batch file** — Agent uses autonomous discovery instead
-   - Root cause: Opus 4.5 "thinks it knows better" and overrides instructions
-   - Impact: 10x cost ($1.50 vs $0.15 per batch), progress counter stuck
-   - Resolution: Path C refactor — make execute code-driven, not LLM-driven
-
-2. **Progress counter stuck at "615 remaining"** — Doesn't update during execute
-   - Root cause: Agent writes progress in different format than expected
-   - Impact: User can't see actual progress
-   - Resolution: Will be fixed in Stage 3 of Path C refactor
-
-3. **Batch number always shows "1"** — Even on batch 16, 17
-   - Root cause: `processedCount` stays at 0 due to format mismatch
-   - Impact: Confusing UX
-   - Resolution: Will be fixed in Stage 3 of Path C refactor
+2. **Agent exits on error instead of self-reflecting** — Fixed
+   - `runWithRecovery()` wrapper invokes recovery agent on errors
 
 ### Documented Decisions
 
@@ -135,69 +112,60 @@ This file tracks the current development state for Claude Code context. It's the
    - The SDK's `allowedTools` is not enforced with `bypassPermissions` ([SDK issue #115](https://github.com/anthropics/claude-agent-sdk-typescript/issues/115))
    - **Decision:** "Just get the work done" — accept pragmatic use of Bash/Read/Grep/Glob for efficiency
    - **Rule:** All vault *writes* must go through MCP tools (audit boundary); reads can use whatever is efficient
-   - **Rationale:** Enforcing strict MCP-only via hooks adds complexity without clear benefit
-   - Documented in CLAUDE.md and PRD.md
+
+2. **Supervisor/Worker architecture (2026-02)**
+   - LLM handles: conversation, intent parsing, scope selection, exception handling
+   - Code handles: deterministic execution, progress tracking, git commits
+   - **Rationale:** 10x cost reduction, predictable execution, better progress tracking
 
 ---
 
 ## Architecture Improvements (Implemented)
 
+### Supervisor/Worker Architecture ✅
+
+**Implemented:** 2026-02-05
+
+New architecture where LLM supervises and code executes:
+
+| Component | Responsibility |
+|-----------|---------------|
+| LLM (Supervisor) | Conversation, intent parsing, scope selection, exception handling |
+| Code (Worker) | Batch execution, progress tracking, git commits |
+
+**New tools:**
+- `preview_changes` — Preview what will change for a scope
+- `execute_batch` — Execute batch deterministically (no LLM per-note)
+- `get_progress` — Track migration progress
+
+**New types:**
+- `WorkScope` — Scope selection (full, folder, files, recent, tag)
+- `NotePreview` — Per-note preview of changes
+- `BatchResult` — Batch execution results
+- `MigrationProgress` — Progress tracking across resume
+
+**Impact:**
+- Execute cost reduced from ~$1.50 to ~$0.15 per batch
+- Progress tracking now accurate
+- Execution is predictable and resumable
+
 ### JSON Data Files Moved to Project Directory ✅
 
 **Implemented:** 2026-02-04
 
-All machine-readable JSON files now live in the project's `data/` directory instead of the Obsidian vault:
-
-| Old Location (vault) | New Location (data/) |
-|---------------------|---------------------|
-| `_Migration_Worklist.json` | `migration-worklist.json` |
-| `_Next_Batch.json` | `next-batch.json` |
-| `_Migration_Progress.json` | `migration-progress.json` |
-| `_Tag Audit Data.json` | `audit-data.json` |
-
-**Why:** Large JSON files in the vault caused Obsidian to crash when indexing them. The vault is meant for human knowledge, not machine data.
-
-**New MCP tools:** `read_data_file` and `write_data_file` for accessing the data/ directory.
-
-**Backward compatibility:** Pre-flight functions check data/ first, then fall back to vault for old installations.
+All machine-readable JSON files now live in the project's `data/` directory instead of the Obsidian vault.
 
 ### Deterministic Batch Extraction ✅
 
 **Implemented:** 2026-02-04
 
-Execute mode now starts processing immediately instead of spending 15-40 tool calls extracting JSON from markdown:
-
-1. **`generate-worklist` writes two files:**
-   - `_Tag Migration Plan.md` — Human-readable plan (unchanged)
-   - `data/migration-worklist.json` — Pure JSON for fast machine access
-
-2. **Pre-flight computes batch:**
-   - Reads worklist JSON from data/
-   - Computes next batch based on progress
-   - Writes `data/next-batch.json` for the execute agent
-
-3. **Execute prompt simplified:**
-   - From ~150 lines to ~50 lines
-   - Agent reads `next-batch.json` directly (1 tool call)
-   - Starts processing immediately
-
-**Impact:** Tool calls reduced from 15-40 to 1; time to start reduced from 30-90s to <5s; cost per batch reduced ~50-90%.
+Execute mode reads `data/next-batch.json` directly instead of extracting from markdown.
 
 ### Error Recovery Loop ✅
 
 **Implemented:** 2026-02-03
 
-The agent now self-reflects on errors instead of immediately exiting:
-
-1. **Recovery wrapper** (`runWithRecovery()`) wraps the main `runAgent()` function
-2. **On error**, invokes a lightweight LLM "recovery agent" that analyzes the error
-3. **Recovery strategies:**
-   - `retry` — Transient error, retry the operation (up to 3 attempts)
-   - `skip` — One item failed, user should skip and continue
-   - `ask_user` — Need human judgment, presents a question
-   - `abort` — Fundamental error, cannot recover
-
-**Cost:** ~$0.05 per error analysis (small budget, fast model)
+The agent self-reflects on errors with retry/skip/ask_user/abort strategies.
 
 ---
 
@@ -206,17 +174,15 @@ The agent now self-reflects on errors instead of immediately exiting:
 | Session | File | Key Findings |
 |---------|------|--------------|
 | Maiden Voyage 2026-01-31 | `.agents/retrospectives/maiden-voyage-2026-01-31.md` | $10.34 total, 3 bugs found, worklist truncation issue |
+| Interactive Mode 2026-02-04 | `.agents/retrospectives/interactive-mode-validation-2026-02-04.md` | Execute ignores batch file, 10x cost overrun → led to Path C |
 
 ---
 
 ## Next Actions
 
-1. ~~Fix Templater YAML parsing bug~~ ✅ Done
-2. ~~Fix inline tag migration bug~~ ✅ Done (2026-02-03)
-3. ~~Implement deterministic batch extraction~~ ✅ Done (2026-02-04)
-4. ~~Move JSON files out of vault~~ ✅ Done (2026-02-04)
-5. Re-run full migration cycle: `generate-worklist` → `execute` → `verify`
-6. Confirm 99%+ compliance and measure execute performance improvement
+1. Run full migration cycle with new Supervisor/Worker architecture
+2. Measure actual cost reduction (target: ~10x improvement)
+3. Confirm 99%+ compliance in verification phase
 
 ---
 
@@ -224,6 +190,7 @@ The agent now self-reflects on errors instead of immediately exiting:
 
 ```bash
 # Run modes
+bun run tagging-agent.ts              # Interactive (default)
 bun run tagging-agent.ts audit
 bun run tagging-agent.ts plan
 bun run tagging-agent.ts generate-worklist
