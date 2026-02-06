@@ -156,53 +156,68 @@ Your task is to create a tag mapping table based on the audit results.
 export function buildExecuteInstructions(config: Config): string {
   return `## Current Phase: EXECUTE
 
-Your task is to execute a PRE-COMPUTED batch of tag changes. The batch file has already been prepared for you.
+Your task is to execute a PRE-COMPUTED batch of tag changes.
 
-### CRITICAL: Follow These Steps EXACTLY
+### ⛔ STOP — READ THIS FIRST ⛔
 
-**Step 1: Read the batch file**
+The batch has ALREADY been computed. The file \`next-batch.json\` contains:
+- The exact notes to process (in \`entries\` array)
+- The exact tag changes for each note (in each entry's \`changes\` array)
+- The batch number and progress info
+
+You do NOT need to:
+- Search for notes (they're in the file)
+- Find which tags need changing (they're in the file)
+- Discover anything (it's all in the file)
+
+**YOUR ONLY JOB: Read the file, then call execute_batch with its contents.**
+
+### WRONG vs RIGHT
+
+❌ WRONG (do not do this):
+\`\`\`
+search_notes({ tag: "personal-growth" })  // NO! Don't search
+preview_changes({ scope: ... })           // NO! Don't preview
+list_notes({ recursive: true })           // NO! Don't list
+\`\`\`
+
+✅ RIGHT (do exactly this):
+\`\`\`
+read_data_file({ filename: "next-batch.json" })
+execute_batch({ entries: <entries from file>, batchNumber: <from file> })
+\`\`\`
+
+### THE ONLY TWO TOOL CALLS YOU NEED
+
+**Call 1:** Read the batch file
 \`\`\`
 read_data_file({ filename: "next-batch.json" })
 \`\`\`
 
-This file contains:
-- \`batchNumber\`: Which batch this is
-- \`entries\`: Array of { path, changes } — the notes to process NOW
-- \`remaining\`: How many notes are left after this batch
-
-If entries is empty, report "Migration complete!" and stop.
-
-**Step 2: Show the user what will be processed**
-Tell them: "Batch X contains Y notes. Ready to proceed?"
-
-**Step 3: Execute the batch**
+**Call 2:** Execute with the entries from that file
 \`\`\`
-execute_batch({ entries: <from batch file>, batchNumber: <from batch file> })
+execute_batch({
+  entries: <copy the entries array from the file exactly>,
+  batchNumber: <copy batchNumber from the file>
+})
 \`\`\`
 
-The execute_batch tool handles EVERYTHING:
-- Applies all tag changes
-- Creates git commits
-- Updates progress tracking
+That's it. Two tool calls. The execute_batch tool handles everything else (git commits, progress tracking).
 
-**Step 4: Report results**
-Show: succeeded count, failed count, any warnings.
+### PROHIBITED TOOLS — DO NOT USE
 
-### ABSOLUTE CONSTRAINTS — VIOLATIONS WILL CAUSE FAILURES
+- \`search_notes\` — notes are already in next-batch.json
+- \`preview_changes\` — changes are already computed
+- \`list_notes\` — notes are already identified
+- \`get_progress\` — progress info is in next-batch.json
+- \`Bash\` — not needed
+- \`Read\` — use read_data_file instead
+- \`Task\` — no subagents needed
+- \`apply_tag_changes\` — use execute_batch instead
 
-❌ Do NOT call \`list_notes\` — the worklist already exists
-❌ Do NOT call \`search_notes\` — notes are already identified
-❌ Do NOT use \`Bash\` or \`Read\` tools — data is in next-batch.json
-❌ Do NOT use \`Task\` subagents — execute directly
-❌ Do NOT call \`apply_tag_changes\` for individual notes — use execute_batch
-❌ Do NOT "generate a worklist" — it was generated in the previous phase
-❌ Do NOT try to be clever or optimize — just follow the steps above
+### AFTER EXECUTION
 
-✅ DO read next-batch.json FIRST
-✅ DO use execute_batch with the entries from that file
-✅ DO report results clearly
-
-The batch is ALREADY COMPUTED and waiting in next-batch.json. Your only job is to read it and call execute_batch.
+Report: "Batch X complete: Y succeeded, Z failed" and any warnings.
 
 Vault path: ${config.vaultPath}`;
 }

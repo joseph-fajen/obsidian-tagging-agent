@@ -122,10 +122,11 @@ describe("buildExecuteInstructions", () => {
 
   test("includes strong constraints against autonomous behavior", () => {
     const instructions = buildExecuteInstructions(mockConfig);
-    expect(instructions).toContain("Do NOT");
-    expect(instructions).toContain("Bash");
-    expect(instructions).toContain("Task");
-    expect(instructions).toContain("ALREADY COMPUTED");
+    expect(instructions).toContain("PROHIBITED");
+    expect(instructions).toContain("search_notes");
+    expect(instructions).toContain("WRONG");
+    expect(instructions).toContain("ALREADY");
+    expect(instructions).toContain("YOUR ONLY JOB");
   });
 
   test("includes vault path", () => {
