@@ -273,7 +273,8 @@ async function deleteNextBatchFile(dataPath: string): Promise<void> {
 async function runLLMPhase(
   phase: AgentPhase,
   sessionId: string | null,
-  config: Config
+  config: Config,
+  batchData?: NextBatch | null
 ): Promise<PhaseResult> {
   const systemPrompt = buildInteractiveSystemPrompt(phase, config);
   const mcpServer = buildMcpServer(config.vaultPath, config.dataPath);
@@ -288,7 +289,24 @@ async function runLLMPhase(
       userPrompt = `Please generate a tag migration plan based on the audit report. Write the plan to _Tag Migration Plan.md.`;
       break;
     case "EXECUTE":
-      userPrompt = `Please apply the tag migration plan. Process up to ${config.batchSize} notes in this batch.`;
+      if (batchData && batchData.entries.length > 0) {
+        // Include batch data directly in the prompt so the agent can't ignore it
+        userPrompt = `Execute this batch of tag changes. Call execute_batch with EXACTLY these parameters:
+
+\`\`\`json
+{
+  "entries": ${JSON.stringify(batchData.entries, null, 2)},
+  "batchNumber": ${batchData.batchNumber}
+}
+\`\`\`
+
+This is batch ${batchData.batchNumber}. There are ${batchData.entries.length} notes to process.
+After this batch: ${batchData.remaining - batchData.entries.length} notes will remain.
+
+DO NOT search for notes. DO NOT read any files. Just call execute_batch with the JSON above.`;
+      } else {
+        userPrompt = `Please apply the tag migration plan. Process up to ${config.batchSize} notes in this batch.`;
+      }
       break;
     case "VERIFY":
       userPrompt = `Please verify the tag migration. Write the verification report to _Tag Migration Verification.md.`;
@@ -598,13 +616,13 @@ export async function runInteractiveAgent(config: Config): Promise<void> {
           phaseSuccess = true;
           notesRemaining = 0;
         } else {
-          // Write batch file for the agent
+          // Write batch file for the agent (kept for debugging, but data is now in prompt)
           await writeNextBatchFile(config.dataPath, batch);
           console.log(`Processing batch ${batch.batchNumber}: ${batch.entries.length} notes`);
           console.log();
 
-          // Run the execute LLM phase
-          const result = await runLLMPhase(phase, state.sessionId, config);
+          // Run the execute LLM phase with batch data included directly in prompt
+          const result = await runLLMPhase(phase, state.sessionId, config, batch);
           state.sessionId = result.sessionId;
           phaseSuccess = result.success;
 
