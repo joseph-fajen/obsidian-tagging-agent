@@ -149,32 +149,62 @@ Your task is to create a tag mapping table based on the audit results.
 /**
  * Build instructions for the execute phase.
  * Uses the new Supervisor/Worker architecture with execute_batch tool.
+ *
+ * This prompt is intentionally prescriptive to prevent the LLM from
+ * ignoring the pre-computed batch and doing autonomous discovery.
  */
 export function buildExecuteInstructions(config: Config): string {
   return `## Current Phase: EXECUTE
 
-Your task is to execute the tag migration using pre-computed worklist.
+Your task is to execute a PRE-COMPUTED batch of tag changes. The batch file has already been prepared for you.
 
-### Workflow
+### CRITICAL: Follow These Steps EXACTLY
 
-1. **Check progress**: Call \`get_progress({})\`
-2. **Load batch**: Call \`read_data_file({ filename: "next-batch.json" })\`
-3. **Confirm with user**: Show what will be processed, ask for confirmation
-4. **Execute**: Call \`execute_batch({ entries, batchNumber })\`
-5. **Report results**: Succeeded, failed, warnings
-6. **Repeat or complete**: If more batches, ask to continue
+**Step 1: Read the batch file**
+\`\`\`
+read_data_file({ filename: "next-batch.json" })
+\`\`\`
 
-### Key Points
+This file contains:
+- \`batchNumber\`: Which batch this is
+- \`entries\`: Array of { path, changes } — the notes to process NOW
+- \`remaining\`: How many notes are left after this batch
 
-- \`execute_batch\` handles everything: applies changes, commits, updates progress
-- Do NOT call \`apply_tag_changes\` directly for batches
-- Each batch is atomic — can resume later if stopped
+If entries is empty, report "Migration complete!" and stop.
 
-### Constraints
+**Step 2: Show the user what will be processed**
+Tell them: "Batch X contains Y notes. Ready to proceed?"
 
-- Do NOT use \`search_notes\` or \`Bash\` — everything is pre-computed
-- Do NOT skip confirmation before executing
-- Vault path: ${config.vaultPath}`;
+**Step 3: Execute the batch**
+\`\`\`
+execute_batch({ entries: <from batch file>, batchNumber: <from batch file> })
+\`\`\`
+
+The execute_batch tool handles EVERYTHING:
+- Applies all tag changes
+- Creates git commits
+- Updates progress tracking
+
+**Step 4: Report results**
+Show: succeeded count, failed count, any warnings.
+
+### ABSOLUTE CONSTRAINTS — VIOLATIONS WILL CAUSE FAILURES
+
+❌ Do NOT call \`list_notes\` — the worklist already exists
+❌ Do NOT call \`search_notes\` — notes are already identified
+❌ Do NOT use \`Bash\` or \`Read\` tools — data is in next-batch.json
+❌ Do NOT use \`Task\` subagents — execute directly
+❌ Do NOT call \`apply_tag_changes\` for individual notes — use execute_batch
+❌ Do NOT "generate a worklist" — it was generated in the previous phase
+❌ Do NOT try to be clever or optimize — just follow the steps above
+
+✅ DO read next-batch.json FIRST
+✅ DO use execute_batch with the entries from that file
+✅ DO report results clearly
+
+The batch is ALREADY COMPUTED and waiting in next-batch.json. Your only job is to read it and call execute_batch.
+
+Vault path: ${config.vaultPath}`;
 }
 
 /**

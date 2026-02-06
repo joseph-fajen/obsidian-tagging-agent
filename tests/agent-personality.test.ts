@@ -120,9 +120,12 @@ describe("buildExecuteInstructions", () => {
     expect(instructions).toContain("execute_batch");
   });
 
-  test("mentions get_progress tool", () => {
+  test("includes strong constraints against autonomous behavior", () => {
     const instructions = buildExecuteInstructions(mockConfig);
-    expect(instructions).toContain("get_progress");
+    expect(instructions).toContain("Do NOT");
+    expect(instructions).toContain("Bash");
+    expect(instructions).toContain("Task");
+    expect(instructions).toContain("ALREADY COMPUTED");
   });
 
   test("includes vault path", () => {
