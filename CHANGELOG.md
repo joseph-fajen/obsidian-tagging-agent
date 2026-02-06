@@ -4,6 +4,73 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-05: Execute Phase Prompt Injection Fix
+
+### Session Context
+
+Despite implementing the Supervisor/Worker architecture and adding increasingly prescriptive execute phase instructions (WRONG vs RIGHT examples, PROHIBITED TOOLS list, "⛔ STOP — READ THIS FIRST ⛔"), the LLM agent persistently ignored the pre-computed `next-batch.json` file and used `search_notes` to discover its own notes.
+
+### Problem Statement
+
+The execute phase was experiencing:
+1. **Agent autonomy override** — Model ignored explicit "DO NOT search" constraints
+2. **Progress divergence** — Agent processed 278 different notes than what was in the worklist
+3. **Cost overrun** — $0.24-$0.48 per batch instead of target ~$0.10
+
+Root cause: The agent had the *option* to read `next-batch.json` or search for notes. It chose to search, even when told not to.
+
+### Key Insight
+
+**Prompt engineering has limits.** When a model persistently ignores instructions, the solution is to **remove the opportunity for deviation** rather than add more constraints. Inject the data directly instead of asking the model to fetch it.
+
+### Solution Implemented
+
+Modified `runLLMPhase()` in `lib/interactive-agent.ts` to include batch data directly in the user prompt:
+
+```typescript
+case "EXECUTE":
+  if (batchData && batchData.entries.length > 0) {
+    userPrompt = `Execute this batch of tag changes. Call execute_batch with EXACTLY these parameters:
+
+\`\`\`json
+{
+  "entries": ${JSON.stringify(batchData.entries, null, 2)},
+  "batchNumber": ${batchData.batchNumber}
+}
+\`\`\`
+
+DO NOT search for notes. DO NOT read any files. Just call execute_batch with the JSON above.`;
+  }
+  break;
+```
+
+The agent now receives the exact `execute_batch` parameters in the prompt, eliminating the need (and ability) to search for notes.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/interactive-agent.ts` | Modified `runLLMPhase()` to accept `batchData` parameter; inject batch JSON directly into EXECUTE prompt |
+| `lib/agent-personality.ts` | Strengthened execute instructions with WRONG vs RIGHT examples, PROHIBITED TOOLS list |
+| `tests/agent-personality.test.ts` | Updated tests for new instruction format |
+
+### Results
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Tool calls per batch | 6-20+ | **1** | 95% reduction |
+| Cost per batch | $0.24-$0.48 | **$0.06** | **75% cheaper** |
+| Behavior | Autonomous discovery | **Deterministic** | Predictable |
+| Progress tracking | Diverged from worklist | **Accurate** | Aligned |
+
+### Commits
+
+- `9ee4f01` fix: strengthen execute phase instructions to prevent autonomous discovery
+- `3c2559d` fix: strengthen execute instructions with WRONG vs RIGHT examples
+- `f165e87` fix: pass batch data directly in execute prompt to prevent autonomous discovery
+
+---
+
 ## 2026-02-05: Audit Data Format Flexibility & Test Isolation Fixes
 
 ### Session Context

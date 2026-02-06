@@ -164,7 +164,7 @@ Each invocation respects `MAX_BUDGET_USD`. Typical costs:
 | Audit | ~$0.30-0.50 (reads all 884 notes at minimal detail) |
 | Generate Worklist | $0.00 (no LLM) |
 | Plan | ~$0.15-0.25 (reads audit-data.json + scheme, writes plan) |
-| Execute (per batch of 50) | ~$0.10-0.15 (supervisor/worker: LLM supervises, code executes) |
+| Execute (per batch of 50) | ~$0.06 (prompt injection: batch data embedded directly) |
 | Verify | ~$0.30-0.50 (reads all notes at minimal detail) |
 
 **Cost optimization:** Execute phase uses Haiku by default for supervision since execution is code-driven. Configure with `EXECUTE_MODEL` env var.
