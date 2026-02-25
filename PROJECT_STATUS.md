@@ -2,15 +2,21 @@
 
 This file tracks the current development state for Claude Code context. It's the single source of truth for what's been implemented, what's pending, and known issues.
 
-**Last Updated:** 2026-02-05 (evening)
+**Last Updated:** 2026-02-25
 
 ---
 
 ## Current Phase
 
-**Status:** Production-ready — Execute phase optimized with prompt injection
+**Status:** Production-ready — Generalized for any vault
 
-The Supervisor/Worker architecture is fully implemented and validated. A critical fix was added to inject batch data directly into the execute prompt, preventing the LLM from ignoring pre-computed batches. Execute phase now costs **$0.06/batch** (down from $0.24-$0.48).
+The agent now supports dynamic tag mappings defined by the user's schema note, rather than hardcoded mappings. Plan phase writes `plan-mappings.json` which the worklist generator uses. New vaults just need to create a schema note describing their desired tagging system.
+
+**Key Changes:**
+- `TAG_MAPPINGS` minimized to universal noise patterns only
+- `loadMappings()` reads plan-mappings.json + audit-data.json
+- `checkSchemeNoteExists()` validates schema note before audit/plan phases
+- `SCHEME_NOTE_PATH` configurable via env var (default: "Proposed Tagging System.md")
 
 ---
 

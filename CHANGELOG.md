@@ -4,6 +4,56 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-25: Dynamic Plan Mappings — Generalization for Any Vault
+
+### Session Context
+
+The agent was built with ~50 hardcoded tag mappings specific to one vault. To share it as a tool others can use, the architecture needed to support user-defined schemas without code editing.
+
+### Problem Statement
+
+- `TAG_MAPPINGS` in `tag-scheme.ts` had ~50 hardcoded mappings specific to original author's vault
+- Plan phase wrote mappings to markdown but not machine-readable JSON
+- Worklist generator checked: hardcoded → audit mappings → valid format → unmapped
+- New users would need to edit source code to use the agent
+
+### Solution Implemented
+
+1. **Plan phase writes `plan-mappings.json`** — Machine-readable mappings for worklist generator
+2. **`loadMappings()` loads plan mappings first** — User-approved mappings take priority over audit-discovered
+3. **`TAG_MAPPINGS` minimized** — Only universal noise patterns remain (heading, follow-up-required-*)
+4. **`SCHEME_NOTE_PATH` configurable** — Users point to their own schema note via env var
+5. **Pre-flight validates schema note** — Friendly error message if missing with actionable guidance
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/config.ts` | Added `schemeNotePath` to Config interface |
+| `tag-scheme.ts` | Minimized `TAG_MAPPINGS` to universal patterns; updated `lookupTagMapping()` to prioritize loaded mappings |
+| `lib/worklist-generator.ts` | Renamed `loadAuditMappings()` → `loadMappings()`; added plan-mappings.json as primary source |
+| `tagging-agent.ts` | Updated prompts to use `config.schemeNotePath`; added Phase 4 to plan prompt for JSON output; added `checkSchemeNoteExists()` pre-flight |
+| `.env.example` | Added `SCHEME_NOTE_PATH` documentation |
+| `README.md` | Added "Getting Started with Your Vault" section |
+| `tests/*.test.ts` | Updated for new behavior; 77 tests modified/added |
+
+### Mapping Priority (New)
+
+```
+1. Noise patterns (isNoiseTag) → REMOVE
+2. Loaded mappings (plan-mappings.json + audit-data.json) → MAP/KEEP/REMOVE
+3. Hardcoded TAG_MAPPINGS (noise only) → REMOVE
+4. Valid hierarchical prefix (status/, type/, etc.) → KEEP
+5. Valid flat kebab-case → KEEP
+6. Otherwise → UNMAPPED
+```
+
+### Commits
+
+- `<pending>` feat: implement dynamic plan mappings for vault generalization
+
+---
+
 ## 2026-02-05: Execute Phase Prompt Injection Fix
 
 ### Session Context

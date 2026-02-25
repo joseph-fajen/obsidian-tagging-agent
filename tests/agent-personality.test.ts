@@ -29,6 +29,7 @@ const mockConfig: Config = {
     CONVERSATION: "claude-sonnet-4-20250514",
   },
   sessionStatePath: "/test/data/interactive-session.json",
+  schemeNotePath: "Proposed Tagging System.md",
 };
 
 describe("buildPersonalityPrompt", () => {

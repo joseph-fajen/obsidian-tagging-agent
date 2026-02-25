@@ -33,6 +33,53 @@ AGENT_MODEL="claude-opus-4-5-20251101"  # Or claude-sonnet-4-20250514 for lower 
 # EXECUTE_MODEL="claude-haiku-4-5-20251001"  # Cheaper for execute supervision
 ```
 
+## Getting Started with Your Vault
+
+### 1. Create Your Tagging Schema Note
+
+Before running the agent, create a note in your vault that describes your desired tagging system. For example, create `Proposed Tagging System.md`:
+
+```markdown
+# My Tagging Schema
+
+## Categories
+
+- **status/** - Task status: `status/pending`, `status/completed`, `status/archived`
+- **type/** - Note type: `type/meeting`, `type/daily-note`, `type/research`
+- **area/** - Life areas: `area/career`, `area/health`, `area/learning`
+- **project/** - Active projects: `project/my-app`, `project/home-reno`
+
+## Topic Tags
+
+Flat tags for topics: `ai-tools`, `productivity`, `cooking`
+
+## Tags to Remove
+
+- `heading` - Noise from Google Docs imports
+- Any tag starting with `follow-up-required-`
+```
+
+The agent will read this note during audit and plan phases to understand your desired tag structure.
+
+### 2. Configure the Agent
+
+If your schema note has a different name, set the path in `.env`:
+
+```bash
+# Optional: if your schema note has a different name
+SCHEME_NOTE_PATH="My Tagging Schema.md"
+```
+
+Default is `Proposed Tagging System.md`.
+
+### 3. Run the Migration
+
+```bash
+bun run tagging-agent.ts  # Interactive mode guides you through
+```
+
+The plan phase will create `data/plan-mappings.json` with all tag mappings derived from your schema. The deterministic worklist generator uses these mappings to compute what changes need to be made.
+
 ## Usage
 
 ### Interactive Mode (Recommended)
@@ -211,7 +258,8 @@ The `data/` directory (git-ignored) contains machine-readable JSON files used du
 
 | File | Purpose |
 |------|---------|
-| `audit-data.json` | Tag frequencies and mappings from audit phase |
+| `audit-data.json` | Tag frequencies and auto-discovered mappings from audit phase |
+| `plan-mappings.json` | User-approved tag mappings from plan phase |
 | `migration-worklist.json` | Full worklist of notes and tag changes |
 | `migration-progress.json` | Tracks which notes have been processed |
 | `next-batch.json` | Pre-computed batch for current execute run |

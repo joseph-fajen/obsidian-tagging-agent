@@ -4,8 +4,7 @@ import { createVaultTools } from "./tools/vault-tools.js";
 import { createTagTools } from "./tools/tag-tools.js";
 import { createGitTools } from "./tools/git-tools.js";
 import { createDataTools } from "./tools/data-tools.js";
-import { SCHEME_NOTE_PATH } from "./tag-scheme.js";
-import { generateWorklist, loadAuditMappings, formatWorklistMarkdown, writeWorklistJson, type MigrationWorklist, type NoteChanges, type NextBatch } from "./lib/worklist-generator.js";
+import { generateWorklist, loadMappings, formatWorklistMarkdown, writeWorklistJson, type MigrationWorklist, type NoteChanges, type NextBatch } from "./lib/worklist-generator.js";
 import { runInteractiveAgent } from "./lib/interactive-agent.js";
 import { join } from "path";
 import { readFile, writeFile, unlink, mkdir } from "fs/promises";
@@ -27,7 +26,7 @@ Your task is to perform a comprehensive audit of every tag in the vault and prod
 2. For each note, call read_note({ path, detail: "minimal" }) to get its tags.
    - IMPORTANT: Use "minimal" detail to stay within budget (~50 tokens per note vs ~2000 for "full").
    - Process notes in batches of 100 if needed to manage context window.
-3. Read the proposed tagging scheme: read_note({ path: "${SCHEME_NOTE_PATH}", detail: "full" }).
+3. Read the proposed tagging scheme: read_note({ path: "${config.schemeNotePath}", detail: "full" }).
 4. Catalog every unique tag with:
    - Frequency count (how many notes use it)
    - Whether it appears as inline, frontmatter, or both
@@ -100,7 +99,7 @@ Tools NOT needed for this phase (audit already collected this data):
    - You do NOT need to scan notes — this data is already collected.
    - If not found, stop and report an error. The audit phase must run first.
 2. Call \`read_note({ path: "_Tag Audit Report.md", detail: "full" })\` for human-readable context.
-3. Call \`read_note({ path: "${SCHEME_NOTE_PATH}", detail: "full" })\` to get the target scheme.
+3. Call \`read_note({ path: "${config.schemeNotePath}", detail: "full" })\` to get the target scheme.
 
 ## Critical Constraint
 
@@ -151,6 +150,27 @@ The plan note must include these sections in order:
    - Review the mapping table and resolve any unmapped tags
    - Run \`bun run tagging-agent.ts generate-worklist\` to produce the machine-parseable worklist
    - Run \`bun run tagging-agent.ts execute\` to apply changes
+
+## Phase 4: Write Machine-Readable Mappings
+
+After writing the plan note, also write the mappings to a JSON file for the worklist generator:
+\`\`\`
+write_data_file({
+  filename: "plan-mappings.json",
+  content: JSON.stringify({
+    generatedAt: "<ISO-8601 timestamp>",
+    generatedBy: "plan-phase-agent",
+    schemeNotePath: "${config.schemeNotePath}",
+    mappings: {
+      // Every tag from your mapping table
+      // Format: "old-tag": "new-tag" or "old-tag": null (for removal)
+      // Include ALL mappings, even KEEP actions (e.g., "ai-tools": "ai-tools")
+    }
+  }, null, 2)
+})
+\`\`\`
+
+This JSON file is consumed by the deterministic worklist generator.
 
 Then call \`git_commit({ message: "Plan complete: _Tag Migration Plan.md" })\`.
 
@@ -287,7 +307,7 @@ Your task is to perform a READ-ONLY verification scan of the entire vault, check
 ## Verification Algorithm
 
 1. Call \`list_notes({ recursive: true })\` to get the full vault inventory.
-2. Read the proposed tagging scheme for reference: \`read_note({ path: "${SCHEME_NOTE_PATH}", detail: "full" })\`.
+2. Read the proposed tagging scheme for reference: \`read_note({ path: "${config.schemeNotePath}", detail: "full" })\`.
 3. For each note (excluding those prefixed with _ — agent artifacts like reports):
    - Call \`read_note({ path, detail: "minimal" })\` to get tag data.
    - Use "minimal" detail to stay within budget (~50 tokens per note).
@@ -691,6 +711,35 @@ export async function checkPlanPrerequisites(dataPath: string, vaultPath: string
   return true;
 }
 
+/**
+ * Pre-flight check for audit/plan modes:
+ * Verify the schema note exists in the vault.
+ * Returns true if schema note exists, false if missing.
+ */
+export async function checkSchemeNoteExists(config: Config): Promise<boolean> {
+  const schemePath = join(config.vaultPath, config.schemeNotePath);
+  try {
+    await readFile(schemePath, "utf-8");
+    console.log(`Found schema note: ${config.schemeNotePath}\n`);
+    return true;
+  } catch {
+    console.error(`Schema note not found: ${config.schemeNotePath}\n`);
+    console.error("The agent needs a note describing your desired tagging schema.");
+    console.error("");
+    console.error("Create a note in your vault that defines:");
+    console.error("  1. Tag categories you want to use (e.g., status/, type/, area/, project/)");
+    console.error("  2. Example tags for each category");
+    console.error("  3. Any existing tags that should be removed (noise patterns)");
+    console.error("  4. How you want to organize your existing tags");
+    console.error("");
+    console.error("Then either:");
+    console.error(`  - Name it "${config.schemeNotePath}" (the default), OR`);
+    console.error("  - Set SCHEME_NOTE_PATH in your .env to point to your note");
+    console.error("");
+    return false;
+  }
+}
+
 // ============================================================================
 // DATA DIRECTORY SETUP
 // ============================================================================
@@ -730,7 +779,7 @@ async function runAgent(config: Config) {
   if (mode === "generate-worklist") {
     console.log("Generating worklist deterministically (no LLM)...\n");
 
-    const auditMappings = await loadAuditMappings(config.dataPath, config.vaultPath);
+    const auditMappings = await loadMappings(config.dataPath, config.vaultPath);
     if (auditMappings) {
       console.log("Loaded audit-discovered mappings from data/audit-data.json");
     } else {
@@ -798,6 +847,19 @@ async function runAgent(config: Config) {
     return;
   }
 
+  // Pre-flight check for audit mode — verify schema note exists
+  if (mode === "audit") {
+    const hasScheme = await checkSchemeNoteExists(config);
+    if (!hasScheme) {
+      console.log("=".repeat(60));
+      console.log(`Mode: ${mode} — schema note required`);
+      console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+      console.log(`Cost: $0.0000 (pre-flight check only)`);
+      console.log("=".repeat(60));
+      return;
+    }
+  }
+
   // Pre-flight check for execute mode
   if (mode === "execute") {
     const canProceed = await checkExecutePrerequisites(config.dataPath, config.vaultPath, config.batchSize);
@@ -811,8 +873,17 @@ async function runAgent(config: Config) {
     }
   }
 
-  // Pre-flight check for plan mode
+  // Pre-flight check for plan mode — verify audit outputs AND schema note exist
   if (mode === "plan") {
+    const hasScheme = await checkSchemeNoteExists(config);
+    if (!hasScheme) {
+      console.log("=".repeat(60));
+      console.log(`Mode: ${mode} — schema note required`);
+      console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+      console.log(`Cost: $0.0000 (pre-flight check only)`);
+      console.log("=".repeat(60));
+      return;
+    }
     const canProceed = await checkPlanPrerequisites(config.dataPath, config.vaultPath);
     if (!canProceed) {
       console.log("=".repeat(60));

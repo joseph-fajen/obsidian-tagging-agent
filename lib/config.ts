@@ -33,6 +33,8 @@ export interface Config {
   modelsByPhase: ModelsByPhase;
   /** Path to the session state file for interactive mode */
   sessionStatePath: string;
+  /** Path to the tagging schema note in the vault (relative to vaultPath) */
+  schemeNotePath: string;
 }
 
 const VALID_MODES: AgentMode[] = ["audit", "plan", "generate-worklist", "execute", "verify", "interactive"];
@@ -83,5 +85,6 @@ export function loadConfig(): Config {
     agentModel: process.env.AGENT_MODEL || "claude-sonnet-4-20250514",
     modelsByPhase,
     sessionStatePath: join(dataPath, "interactive-session.json"),
+    schemeNotePath: process.env.SCHEME_NOTE_PATH || "Proposed Tagging System.md",
   };
 }

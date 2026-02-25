@@ -255,57 +255,67 @@ function extractMappingsFromAuditData(data: Record<string, unknown>): Record<str
 }
 
 /**
- * Load audit-discovered mappings from data/ directory (or vault for backward compatibility).
- * Returns undefined if the file doesn't exist or can't be parsed.
+ * Load mappings from plan-mappings.json (primary) or audit-data.json (fallback).
+ * Plan mappings are user-approved mappings from the plan phase.
+ * Audit mappings are auto-discovered mappings from the audit phase.
  *
- * Supports both expected format ({ mappings: {...} }) and alternative formats
- * that the interactive agent may produce ({ consolidationOpportunities: {...} }).
+ * Returns undefined if neither file exists.
  */
-export async function loadAuditMappings(
+export async function loadMappings(
   dataPath: string,
   vaultPath: string,
 ): Promise<AuditMappings | undefined> {
-  // Try data/ first (new location)
+  const allMappings: Record<string, string | null> = {};
+
+  // 1. Try plan-mappings.json first (user-approved, highest priority)
+  try {
+    const raw = await readFile(join(dataPath, "plan-mappings.json"), "utf-8");
+    const data = JSON.parse(raw) as { mappings?: Record<string, string | null> };
+    if (data.mappings) {
+      Object.assign(allMappings, data.mappings);
+    }
+  } catch {
+    // Plan mappings don't exist yet — that's fine, fall through
+  }
+
+  // 2. Try audit-data.json (auto-discovered mappings, lower priority)
   try {
     const raw = await readFile(join(dataPath, "audit-data.json"), "utf-8");
     const data = JSON.parse(raw) as Record<string, unknown>;
-
-    // Extract mappings from whatever format the agent used
     const extractedMappings = extractMappingsFromAuditData(data);
-
-    if (Object.keys(extractedMappings).length > 0) {
-      return { mappings: extractedMappings } as AuditMappings;
-    }
-
-    // Even if no mappings found, the file exists - return empty mappings
-    // so we know audit was run (worklist generator will use hardcoded mappings)
-    if (data) {
-      return { mappings: {} } as AuditMappings;
+    // Only add audit mappings that aren't already in plan mappings
+    for (const [key, value] of Object.entries(extractedMappings)) {
+      if (!(key in allMappings)) {
+        allMappings[key] = value;
+      }
     }
   } catch {
-    // Fall through to vault
+    // No audit data — fall through
   }
 
-  // Fallback: try vault (old location)
+  // 3. Vault fallback for backward compatibility
   try {
     const raw = await readFile(join(vaultPath, "_Tag Audit Data.json"), "utf-8");
     const data = JSON.parse(raw) as Record<string, unknown>;
-
     const extractedMappings = extractMappingsFromAuditData(data);
-
-    if (Object.keys(extractedMappings).length > 0) {
-      return { mappings: extractedMappings } as AuditMappings;
-    }
-
-    if (data) {
-      return { mappings: {} } as AuditMappings;
+    for (const [key, value] of Object.entries(extractedMappings)) {
+      if (!(key in allMappings)) {
+        allMappings[key] = value;
+      }
     }
   } catch {
-    // No audit data found
+    // No vault fallback
+  }
+
+  if (Object.keys(allMappings).length > 0) {
+    return { mappings: allMappings };
   }
 
   return undefined;
 }
+
+// Keep old name as alias for backward compatibility
+export const loadAuditMappings = loadMappings;
 
 /**
  * Format the worklist as a markdown section suitable for embedding

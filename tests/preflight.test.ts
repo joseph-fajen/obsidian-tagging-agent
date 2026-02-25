@@ -290,6 +290,61 @@ describe("checkPlanPrerequisites", () => {
   });
 });
 
+describe("checkSchemeNoteExists", () => {
+  let testVaultPath: string;
+
+  beforeAll(async () => {
+    testVaultPath = await mkdtemp(join(tmpdir(), "scheme-preflight-test-"));
+  });
+
+  afterAll(async () => {
+    await rm(testVaultPath, { recursive: true, force: true });
+  });
+
+  test("returns true when schema note exists", async () => {
+    await writeFile(
+      join(testVaultPath, "My Tagging Schema.md"),
+      "# My Tagging Schema\n\nDefines tags..."
+    );
+
+    const mockConfig = {
+      vaultPath: testVaultPath,
+      schemeNotePath: "My Tagging Schema.md",
+    };
+
+    const { checkSchemeNoteExists } = await import("../tagging-agent.js");
+    const result = await checkSchemeNoteExists(mockConfig as any);
+    expect(result).toBe(true);
+  });
+
+  test("returns false when schema note missing", async () => {
+    const mockConfig = {
+      vaultPath: testVaultPath,
+      schemeNotePath: "NonExistent Schema.md",
+    };
+
+    const { checkSchemeNoteExists } = await import("../tagging-agent.js");
+    const result = await checkSchemeNoteExists(mockConfig as any);
+    expect(result).toBe(false);
+  });
+
+  test("uses default path when not configured", async () => {
+    await writeFile(
+      join(testVaultPath, "Proposed Tagging System.md"),
+      "# Proposed Tagging System"
+    );
+
+    const mockConfig = {
+      vaultPath: testVaultPath,
+      schemeNotePath: "Proposed Tagging System.md", // default
+    };
+
+    const { checkSchemeNoteExists } = await import("../tagging-agent.js");
+    const result = await checkSchemeNoteExists(mockConfig as any);
+    expect(result).toBe(true);
+  });
+});
+
 describe("NextBatch structure", () => {
   test("NextBatch interface shape is correct", async () => {
     // Test the expected shape of NextBatch

@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { generateWorklist, loadAuditMappings, formatWorklistMarkdown, writeWorklistJson } from "../lib/worklist-generator.js";
+import { generateWorklist, loadMappings, loadAuditMappings, formatWorklistMarkdown, writeWorklistJson } from "../lib/worklist-generator.js";
 
 let testVaultPath: string;
 let testDataPath: string;
@@ -90,16 +90,26 @@ afterAll(async () => {
   await rm(testDataPath, { recursive: true, force: true });
 });
 
+// Test mappings that simulate what plan-mappings.json would provide
+const testMappings = {
+  mappings: {
+    "daily-reflection": "type/daily-note",
+    "todo": "status/pending",
+    "meeting-notes": "type/meeting",
+    "research": "type/research",
+  }
+};
+
 describe("generateWorklist", () => {
   test("produces correct worklist for test vault", async () => {
-    const result = await generateWorklist(testVaultPath);
+    const result = await generateWorklist(testVaultPath, testMappings);
 
     // Should scan all non-artifact notes
     // Notes: day1, day2, links, valid, empty, unknown, daily-with-cursor = 7
     // Plus templater-frontmatter which is scanned but skipped due to Templater in frontmatter = 8
     expect(result.stats.totalNotesScanned).toBe(8); // excludes _Tag Audit Report.md
 
-    // Notes with changes: day1 (2 mappings), day2 (2 mappings), links (noise removal)
+    // Notes with changes: day1 (2 mappings), day2 (2 mappings), links (noise removal), daily-with-cursor (1 mapping)
     expect(result.stats.notesWithChanges).toBeGreaterThanOrEqual(3);
 
     // Valid note should NOT appear in worklist
@@ -109,8 +119,8 @@ describe("generateWorklist", () => {
     expect(validEntry).toBeUndefined();
   });
 
-  test("maps known tags correctly", async () => {
-    const result = await generateWorklist(testVaultPath);
+  test("maps known tags correctly with provided mappings", async () => {
+    const result = await generateWorklist(testVaultPath, testMappings);
     const day1 = result.worklist.worklist.find(
       (w) => w.path === join("journal", "day1.md"),
     );
@@ -146,7 +156,7 @@ describe("generateWorklist", () => {
   });
 
   test("processes files with Templater in body but valid frontmatter", async () => {
-    const result = await generateWorklist(testVaultPath);
+    const result = await generateWorklist(testVaultPath, testMappings);
     // Should find the daily note with cursor placeholder in body
     const dailyNote = result.worklist.worklist.find(
       (w) => w.path === join("journal", "daily-with-cursor.md"),
@@ -196,54 +206,75 @@ describe("generateWorklist", () => {
   });
 });
 
-describe("loadAuditMappings", () => {
-  test("returns undefined when file doesn't exist", async () => {
-    const result = await loadAuditMappings(testDataPath, testVaultPath);
+describe("loadMappings", () => {
+  test("returns undefined when no files exist", async () => {
+    const result = await loadMappings(testDataPath, testVaultPath);
     expect(result).toBeUndefined();
   });
 
-  test("loads audit mappings from data/ (new location)", async () => {
+  test("loads mappings from audit-data.json in data/", async () => {
     await writeFile(
       join(testDataPath, "audit-data.json"),
       JSON.stringify({ mappings: { "custom": "type/custom" } }),
     );
-    const result = await loadAuditMappings(testDataPath, testVaultPath);
+    const result = await loadMappings(testDataPath, testVaultPath);
     expect(result).toBeDefined();
     expect(result!.mappings["custom"]).toBe("type/custom");
     // Clean up
     await rm(join(testDataPath, "audit-data.json"));
   });
 
-  test("loads audit mappings from vault (fallback location)", async () => {
+  test("loads mappings from vault (fallback location)", async () => {
     await writeFile(
       join(testVaultPath, "_Tag Audit Data.json"),
       JSON.stringify({ mappings: { "vault-custom": "type/vault" } }),
     );
-    const result = await loadAuditMappings(testDataPath, testVaultPath);
+    const result = await loadMappings(testDataPath, testVaultPath);
     expect(result).toBeDefined();
     expect(result!.mappings["vault-custom"]).toBe("type/vault");
     // Clean up
     await rm(join(testVaultPath, "_Tag Audit Data.json"));
   });
 
-  test("data/ takes precedence over vault", async () => {
-    // Create files in both locations
+  test("plan-mappings.json takes priority over audit-data.json", async () => {
+    // Create both files with different mappings for same tag
+    await writeFile(
+      join(testDataPath, "plan-mappings.json"),
+      JSON.stringify({ mappings: { "test-tag": "plan-value" } }),
+    );
     await writeFile(
       join(testDataPath, "audit-data.json"),
-      JSON.stringify({ mappings: { "source": "data" } }),
-    );
-    await writeFile(
-      join(testVaultPath, "_Tag Audit Data.json"),
-      JSON.stringify({ mappings: { "source": "vault" } }),
+      JSON.stringify({ mappings: { "test-tag": "audit-value" } }),
     );
 
-    const result = await loadAuditMappings(testDataPath, testVaultPath);
+    const result = await loadMappings(testDataPath, testVaultPath);
     expect(result).toBeDefined();
-    expect(result!.mappings["source"]).toBe("data"); // data/ should win
+    expect(result!.mappings["test-tag"]).toBe("plan-value"); // plan wins
 
     // Clean up
+    await rm(join(testDataPath, "plan-mappings.json"));
     await rm(join(testDataPath, "audit-data.json"));
-    await rm(join(testVaultPath, "_Tag Audit Data.json"));
+  });
+
+  test("merges plan-mappings with audit-data (plan takes priority)", async () => {
+    // Create plan with one mapping, audit with another
+    await writeFile(
+      join(testDataPath, "plan-mappings.json"),
+      JSON.stringify({ mappings: { "from-plan": "plan-value" } }),
+    );
+    await writeFile(
+      join(testDataPath, "audit-data.json"),
+      JSON.stringify({ mappings: { "from-audit": "audit-value" } }),
+    );
+
+    const result = await loadMappings(testDataPath, testVaultPath);
+    expect(result).toBeDefined();
+    expect(result!.mappings["from-plan"]).toBe("plan-value");
+    expect(result!.mappings["from-audit"]).toBe("audit-value");
+
+    // Clean up
+    await rm(join(testDataPath, "plan-mappings.json"));
+    await rm(join(testDataPath, "audit-data.json"));
   });
 
   test("extracts mappings from consolidationOpportunities format", async () => {
@@ -274,7 +305,7 @@ describe("loadAuditMappings", () => {
       JSON.stringify(auditData, null, 2)
     );
 
-    const result = await loadAuditMappings(testDataPath, testVaultPath);
+    const result = await loadMappings(testDataPath, testVaultPath);
     expect(result).toBeDefined();
 
     // Should extract from migrationMap
@@ -292,23 +323,9 @@ describe("loadAuditMappings", () => {
     await rm(join(testDataPath, "audit-data.json"));
   });
 
-  test("returns empty mappings object when file exists but no mappings found", async () => {
-    // Create audit-data.json with no mappings
-    const auditData = {
-      generatedAt: new Date().toISOString(),
-      tagInventory: { totalUniqueTags: 10 },
-    };
-    await writeFile(
-      join(testDataPath, "audit-data.json"),
-      JSON.stringify(auditData, null, 2)
-    );
-
-    const result = await loadAuditMappings(testDataPath, testVaultPath);
-    expect(result).toBeDefined();
-    expect(result!.mappings).toEqual({});
-
-    // Clean up
-    await rm(join(testDataPath, "audit-data.json"));
+  test("loadAuditMappings is alias for loadMappings", async () => {
+    // loadAuditMappings should be the same function as loadMappings
+    expect(loadAuditMappings).toBe(loadMappings);
   });
 });
 
@@ -419,7 +436,9 @@ tags: []
 Has #ai-tools (valid inline) and #daily-reflection (needs mapping).
 `, "utf-8");
 
-    const result = await generateWorklist(testDir);
+    // Provide mappings for daily-reflection
+    const localMappings = { mappings: { "daily-reflection": "type/daily-note" } };
+    const result = await generateWorklist(testDir, localMappings);
 
     expect(result.worklist.worklist.length).toBe(1);
     const changes = result.worklist.worklist[0].changes;
@@ -453,7 +472,8 @@ describe("writeWorklistJson", () => {
       join(testDir, "test.md"),
       `---\ntags:\n  - todo\n---\nTest note.\n`,
     );
-    const result = await generateWorklist(testDir);
+    const localMappings = { mappings: { "todo": "status/pending" } };
+    const result = await generateWorklist(testDir, localMappings);
 
     // Write the JSON file to dataPath
     await writeWorklistJson(testData, result.worklist);
@@ -479,7 +499,8 @@ describe("writeWorklistJson", () => {
       join(testDir, "note.md"),
       `---\ntags:\n  - meeting-notes\n---\nMeeting content.\n`,
     );
-    const result = await generateWorklist(testDir);
+    const localMappings = { mappings: { "meeting-notes": "type/meeting" } };
+    const result = await generateWorklist(testDir, localMappings);
     await writeWorklistJson(testData, result.worklist);
 
     const jsonPath = join(testData, "migration-worklist.json");
@@ -507,7 +528,8 @@ describe("writeWorklistJson", () => {
       join(testDir, "note.md"),
       `---\ntags:\n  - daily-reflection\n---\nDaily note.\n`,
     );
-    const result = await generateWorklist(testDir);
+    const localMappings = { mappings: { "daily-reflection": "type/daily-note" } };
+    const result = await generateWorklist(testDir, localMappings);
     await writeWorklistJson(testData, result.worklist);
 
     const jsonPath = join(testData, "migration-worklist.json");
