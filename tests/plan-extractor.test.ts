@@ -178,6 +178,66 @@ No mapping table here.
     expect(result.warnings.length).toBeGreaterThan(0);
     expect(result.warnings[0]).toContain("orphan");
   });
+
+  test("handles REMOVE with em-dash (—)", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`heading\` | — | REMOVE | Noise tag |
+| \`follow-up-required-weekly\` | — | REMOVE | Obsolete |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["heading"]).toBeNull();
+    expect(result.mappings["follow-up-required-weekly"]).toBeNull();
+    expect(result.stats.removeActions).toBe(2);
+  });
+
+  test("handles REMOVE with hyphen (-)", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`noise-tag\` | - | REMOVE | Using hyphen |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["noise-tag"]).toBeNull();
+    expect(result.stats.removeActions).toBe(1);
+  });
+
+  test("warns on key collision when different values", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`research\` | \`type/research\` | MAP | Add prefix |
+| \`Research\` | \`research\` | MAP | Fix case |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    // Both normalize to "research" - second one wins but should warn
+    expect(result.mappings["research"]).toBe("research"); // Last value wins
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings[0]).toContain("collision");
+    expect(result.warnings[0]).toContain("research");
+  });
+
+  test("no warning when same key mapped to same value", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`ai-tools\` | \`ai-tools\` | KEEP | Keep it |
+| \`AI-Tools\` | \`ai-tools\` | MAP | Fix case |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["ai-tools"]).toBe("ai-tools");
+    // No collision warning because values are the same
+    expect(result.warnings.filter(w => w.includes("collision")).length).toBe(0);
+  });
 });
 
 describe("extractMappingsFromPlanFile", () => {

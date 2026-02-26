@@ -118,10 +118,13 @@ Your task is to create a tag mapping table based on the audit results.
 2. Read the tagging scheme: \`read_note({ path: "${config.schemeNotePath}", detail: "full" })\`
 3. Create a mapping table for EVERY tag found in the audit:
    - **MAP**: Transform to new hierarchical tag
-   - **REMOVE**: Delete entirely (noise/obsolete)
+   - **REMOVE**: Delete entirely (use \`—\` for new tag column)
    - **KEEP**: No change needed (already valid)
    - **UNMAPPED**: Needs user decision
-4. Write the plan to \`_Tag Migration Plan.md\`
+4. **IMPORTANT for case/format variants**: Map directly to final target, not intermediate:
+   - ✅ \`Research\` → \`type/research\` (direct to final)
+   - ❌ \`Research\` → \`research\` (intermediate — causes collision with \`research\` → \`type/research\`)
+5. Write the plan to \`_Tag Migration Plan.md\`
 5. Commit with \`git_commit({ message: "Plan complete: _Tag Migration Plan.md" })\`
 
 ### Key Points

@@ -120,16 +120,28 @@ Based on the audit and scheme, create a mapping for EVERY tag found in the audit
 | Old Tag | New Tag | Action | Notes |
 |---------|---------|--------|-------|
 | \`daily-reflection\` | \`type/daily-note\` | MAP | Move to type hierarchy |
-| \`heading\` | (remove) | REMOVE | Noise tag |
+| \`heading\` | — | REMOVE | Noise tag |
 | \`technical-writing\` | \`technical-writing\` | KEEP | Already valid topic tag |
 | \`ai-tools\` | \`ai-tools\` | KEEP | Already valid, no change needed |
 | \`code_review\` | ? | UNMAPPED | Needs user decision |
 
 Action types:
 - **MAP**: Transform to new hierarchical tag
-- **REMOVE**: Delete entirely (noise/obsolete)
+- **REMOVE**: Delete entirely (noise/obsolete) — use \`—\` or \`(remove)\` for new tag
 - **KEEP**: No change needed (already valid)
 - **UNMAPPED**: Cannot determine mapping, needs user input
+
+**IMPORTANT for case/format variants:**
+When mapping case variants (e.g., \`Research\`, \`AI-Tools\`) or format variants (e.g., \`ai_tools\`),
+map them DIRECTLY to the final target tag, not through intermediate steps:
+
+✅ CORRECT:
+| \`Research\` | \`type/research\` | MAP | Fix case + add type prefix |
+| \`AI-Tools\` | \`ai-tools\` | MAP | Fix case |
+| \`ai_tools\` | \`ai-tools\` | MAP | Fix underscores |
+
+❌ WRONG (creates mapping collisions):
+| \`Research\` | \`research\` | MAP | Fix case (will become type/research later) |
 
 ## Phase 3: Write the Plan Note
 

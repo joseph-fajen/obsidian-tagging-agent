@@ -19,20 +19,20 @@ export interface PlanExtractionResult {
 
 /**
  * Regex to match mapping table rows.
- * Expected format: | `old-tag` | `new-tag` or (remove) or ? | ACTION | notes |
+ * Expected format: | `old-tag` | `new-tag` or (remove) or — or ? | ACTION | notes |
  *
  * Handles variations:
  * - Backticks optional (some LLMs might omit them)
  * - Whitespace flexible (tight or spaced formatting)
  * - Action case-insensitive
- * - New tag can be: `tag`, (remove), or ?
+ * - New tag can be: `tag`, (remove), —, -, or ?
  *
  * Captures:
  * - Group 1: old tag (without backticks)
- * - Group 2: new tag (without backticks), or undefined for (remove)/?
+ * - Group 2: new tag (without backticks), or undefined for removal indicators
  * - Group 3: action (MAP, REMOVE, KEEP, UNMAPPED)
  */
-const TABLE_ROW_REGEX = /^\|\s*`?([^`|\n]+?)`?\s*\|\s*(?:`([^`|\n]+?)`|\(remove\)|\?)\s*\|\s*(MAP|REMOVE|KEEP|UNMAPPED)\s*\|/gim;
+const TABLE_ROW_REGEX = /^\|\s*`?([^`|\n]+?)`?\s*\|\s*(?:`([^`|\n]+?)`|—|-|\(remove\)|\?|)\s*\|\s*(MAP|REMOVE|KEEP|UNMAPPED)\s*\|/gim;
 
 /**
  * Extract tag mappings from a plan markdown string.
@@ -55,28 +55,45 @@ export function extractMappingsFromMarkdown(markdown: string): PlanExtractionRes
     const normalizedOld = oldTag.toLowerCase().trim();
     const upperAction = action.toUpperCase();
 
+    // Determine the new value before checking for collisions
+    let newValue: string | null | undefined;
+
     switch (upperAction) {
       case "MAP":
         if (newTag) {
-          mappings[normalizedOld] = newTag.toLowerCase().trim();
+          newValue = newTag.toLowerCase().trim();
           mapActions++;
         } else {
           warnings.push(`MAP action for "${oldTag}" has no new tag`);
         }
         break;
       case "REMOVE":
-        mappings[normalizedOld] = null;
+        newValue = null;
         removeActions++;
         break;
       case "KEEP":
         // KEEP means tag stays as-is; store identity mapping
-        mappings[normalizedOld] = normalizedOld;
+        newValue = normalizedOld;
         keepActions++;
         break;
       case "UNMAPPED":
         // Don't add to mappings — these need user decision
         unmappedActions++;
         break;
+    }
+
+    // Store mapping and warn on collisions
+    if (newValue !== undefined) {
+      if (normalizedOld in mappings) {
+        const existingValue = mappings[normalizedOld];
+        if (existingValue !== newValue) {
+          warnings.push(
+            `Key collision: "${normalizedOld}" already mapped to "${existingValue}", ` +
+            `overwriting with "${newValue}" (from "${oldTag}")`
+          );
+        }
+      }
+      mappings[normalizedOld] = newValue;
     }
   }
 
