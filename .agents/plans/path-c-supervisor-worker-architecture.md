@@ -1,7 +1,7 @@
 ---
 status: SUPERSEDED
 created: 2026-02-05
-superseded_by: supervisor-worker-implementation.md
+superseded_by: 12-supervisor-worker-implementation.md
 note: Design document — implementation tracked in separate plan
 ---
 
