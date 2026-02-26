@@ -4,6 +4,49 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-26: Architecture Cleanup — Code-Driven Plan Extraction
+
+### Session Context
+
+The dynamic plan mappings validation revealed that the plan phase wasn't reliably writing `plan-mappings.json`. The LLM ignored the instruction, and the system fell back to `audit-data.json` mappings, blurring the separation between audit (discovery) and plan (decisions).
+
+### Problem Statement
+
+1. **Plan phase doesn't reliably write `plan-mappings.json`** — LLM ignores explicit prompts
+2. **Audit phase derives mappings** — Blurs separation of concerns
+3. **Fallback behavior masks failures** — System works but intended flow is broken
+4. **No architecture documentation** — Design decisions scattered across files
+
+### Solution Implemented
+
+1. **Code-driven JSON extraction** — New `lib/plan-extractor.ts` parses markdown mapping table and writes `plan-mappings.json` in `generate-worklist` mode
+2. **Strict phase separation** — Audit only collects frequencies; Plan creates mapping table; Code extracts it
+3. **Required plan-mappings.json** — Fail explicitly if mappings can't be extracted
+4. **Architecture documentation** — New `docs/ARCHITECTURE.md` explains design decisions
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/plan-extractor.ts` | NEW: Markdown table parsing and JSON extraction |
+| `tests/plan-extractor.test.ts` | NEW: Tests for extraction logic |
+| `tagging-agent.ts` | Integration of extraction in generate-worklist mode |
+| `lib/worklist-generator.ts` | Simplified `loadMappings()` — only plan-mappings.json |
+| `lib/agent-personality.ts` | Audit instructions no longer request mappings |
+| `tests/worklist-generator.test.ts` | Updated for new loadMappings behavior |
+| `tests/agent-personality.test.ts` | Tests for audit phase separation |
+| `docs/ARCHITECTURE.md` | NEW: Comprehensive architecture documentation |
+
+### Key Insight
+
+This follows the same lesson as the execute phase prompt injection fix: when LLMs unreliably follow instructions, move the critical work to code. The plan phase LLM writes a human-readable mapping table; code extracts it to JSON.
+
+### Commits
+
+- `<pending>` refactor: code-driven plan extraction and architecture documentation
+
+---
+
 ## 2026-02-25: Dynamic Plan Mappings — Generalization for Any Vault
 
 ### Session Context

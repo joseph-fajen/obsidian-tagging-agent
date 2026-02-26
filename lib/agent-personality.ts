@@ -8,7 +8,6 @@
 
 import { type Config } from "./config.js";
 import { type AgentPhase } from "./session-state.js";
-import { SCHEME_NOTE_PATH } from "../tag-scheme.js";
 
 // ============================================================================
 // BASE PERSONALITY
@@ -59,7 +58,8 @@ Your task is to scan every note in the vault and catalog all existing tags.
 2. For each note, call \`read_note({ path, detail: "minimal" })\` to get its tags.
    - Use "minimal" detail to stay within budget (~50 tokens per note).
    - Process notes in batches of 100 if needed.
-3. Read the proposed tagging scheme: \`read_note({ path: "${SCHEME_NOTE_PATH}", detail: "full" })\`.
+3. Read the proposed tagging scheme: \`read_note({ path: "${config.schemeNotePath}", detail: "full" })\`.
+   - Use this to understand the TARGET structure, but do NOT derive mappings.
 4. Catalog every unique tag with frequency counts and classification.
 5. Write the audit report to \`_Tag Audit Report.md\`.
 6. Write structured data using this EXACT format:
@@ -72,10 +72,6 @@ Your task is to scan every note in the vault and catalog all existing tags.
        totalNotes: <number>,
        totalTaggedNotes: <number>,
        uniqueTags: <number>,
-       mappings: {
-         // Tags you discovered and their recommended mappings
-         // Format: "old-tag": "new-tag" or "old-tag": null (to remove)
-       },
        tagFrequencies: {
          // ALL tags found with their counts
          // Format: "tag-name": count
@@ -85,32 +81,22 @@ Your task is to scan every note in the vault and catalog all existing tags.
    \`\`\`
 7. Commit with \`git_commit({ message: "Audit complete: _Tag Audit Report.md" })\`.
 
-### CRITICAL: audit-data.json Schema
+### CRITICAL: Phase Separation
 
-The worklist generator REQUIRES this exact structure:
-- \`tagFrequencies\`: Object with all tags as keys, counts as values
-- \`mappings\`: Object with tag mappings (can be empty if unsure)
+The AUDIT phase DISCOVERS tags. It does NOT decide mappings.
 
-Example:
-\`\`\`json
-{
-  "tagFrequencies": {
-    "daily-note": 17,
-    "technical-writing": 6,
-    "todo": 3
-  },
-  "mappings": {
-    "daily-note": "type/daily-note",
-    "todo": "status/pending"
-  }
-}
-\`\`\`
+- DO collect: tag names, frequencies, locations (inline/frontmatter)
+- DO identify: noise patterns, format issues
+- DO NOT include: a "mappings" field in audit-data.json
+- DO NOT decide: which tags map to which new tags
+
+Mapping decisions are made in the PLAN phase, not here.
 
 ### Key Points
 
 - This is READ-ONLY — only write the report and data file
 - Identify noise tags (Google Docs anchors with "=", "heading", "follow-up-required-*")
-- Tag format: lowercase kebab-case, valid prefixes are status/, type/, area/, project/
+- Tag format reference: lowercase kebab-case, valid prefixes are status/, type/, area/, project/
 - Today's date: ${today}
 - Vault path: ${config.vaultPath}`;
 }
@@ -129,7 +115,7 @@ Your task is to create a tag mapping table based on the audit results.
 ### Workflow
 
 1. Read the audit report: \`read_note({ path: "_Tag Audit Report.md", detail: "full" })\`
-2. Read the tagging scheme: \`read_note({ path: "${SCHEME_NOTE_PATH}", detail: "full" })\`
+2. Read the tagging scheme: \`read_note({ path: "${config.schemeNotePath}", detail: "full" })\`
 3. Create a mapping table for EVERY tag found in the audit:
    - **MAP**: Transform to new hierarchical tag
    - **REMOVE**: Delete entirely (noise/obsolete)

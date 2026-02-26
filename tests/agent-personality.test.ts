@@ -87,6 +87,22 @@ describe("buildAuditInstructions", () => {
     const instructions = buildAuditInstructions(mockConfig);
     expect(instructions.toLowerCase()).toContain("noise");
   });
+
+  test("audit instructions do NOT mention mappings field in JSON schema", () => {
+    const instructions = buildAuditInstructions(mockConfig);
+    // Should NOT tell audit to derive mappings
+    expect(instructions).not.toContain('"mappings":');
+    expect(instructions).not.toContain("mappings: {");
+    // Should emphasize phase separation
+    expect(instructions).toContain("DISCOVERS tags");
+    expect(instructions).toContain("does NOT decide mappings");
+  });
+
+  test("emphasizes phase separation", () => {
+    const instructions = buildAuditInstructions(mockConfig);
+    expect(instructions).toContain("Phase Separation");
+    expect(instructions).toContain("PLAN phase");
+  });
 });
 
 describe("buildPlanInstructions", () => {

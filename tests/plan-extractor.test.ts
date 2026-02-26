@@ -1,0 +1,264 @@
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { mkdtemp, writeFile, readFile, rm } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
+import {
+  extractMappingsFromMarkdown,
+  extractMappingsFromPlanFile,
+  writePlanMappingsJson,
+} from "../lib/plan-extractor.js";
+
+describe("extractMappingsFromMarkdown", () => {
+  test("extracts MAP actions correctly", () => {
+    const markdown = `
+# Tag Migration Plan
+
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`daily-reflection\` | \`type/daily-note\` | MAP | Move to type |
+| \`todo\` | \`status/pending\` | MAP | Status tag |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["daily-reflection"]).toBe("type/daily-note");
+    expect(result.mappings["todo"]).toBe("status/pending");
+    expect(result.stats.mapActions).toBe(2);
+  });
+
+  test("extracts REMOVE actions correctly", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`heading\` | (remove) | REMOVE | Noise tag |
+| \`follow-up-required-weekly\` | (remove) | REMOVE | Obsolete |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["heading"]).toBeNull();
+    expect(result.mappings["follow-up-required-weekly"]).toBeNull();
+    expect(result.stats.removeActions).toBe(2);
+  });
+
+  test("extracts KEEP actions as identity mappings", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`ai-tools\` | \`ai-tools\` | KEEP | Already valid |
+| \`blockchain\` | \`blockchain\` | KEEP | Topic tag |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["ai-tools"]).toBe("ai-tools");
+    expect(result.mappings["blockchain"]).toBe("blockchain");
+    expect(result.stats.keepActions).toBe(2);
+  });
+
+  test("does not include UNMAPPED actions in mappings", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`unknown-tag\` | ? | UNMAPPED | Needs decision |
+| \`ai-tools\` | \`ai-tools\` | KEEP | Valid |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["unknown-tag"]).toBeUndefined();
+    expect(result.mappings["ai-tools"]).toBe("ai-tools");
+    expect(result.stats.unmappedActions).toBe(1);
+  });
+
+  test("handles mixed actions in one table", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`daily-reflection\` | \`type/daily-note\` | MAP | Remap |
+| \`heading\` | (remove) | REMOVE | Noise |
+| \`ai-tools\` | \`ai-tools\` | KEEP | Valid |
+| \`mystery\` | ? | UNMAPPED | Unknown |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.stats.totalMappings).toBe(3); // MAP + REMOVE + KEEP
+    expect(result.stats.mapActions).toBe(1);
+    expect(result.stats.removeActions).toBe(1);
+    expect(result.stats.keepActions).toBe(1);
+    expect(result.stats.unmappedActions).toBe(1);
+  });
+
+  test("normalizes tags to lowercase", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`Daily-Reflection\` | \`type/daily-note\` | MAP | Case |
+| \`AI-Tools\` | \`ai-tools\` | KEEP | Mixed case |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.mappings["daily-reflection"]).toBe("type/daily-note");
+    expect(result.mappings["ai-tools"]).toBe("ai-tools");
+  });
+
+  test("returns success=false for empty table", () => {
+    const markdown = `
+# Tag Migration Plan
+
+No mapping table here.
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(false);
+    expect(result.stats.totalMappings).toBe(0);
+  });
+
+  test("handles table with only header row", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(false);
+  });
+
+  test("handles tight formatting (no spaces)", () => {
+    const markdown = `
+|Old Tag|New Tag|Action|Notes|
+|---|---|---|---|
+|\`tight-tag\`|\`type/tight\`|MAP|No spaces|
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["tight-tag"]).toBe("type/tight");
+  });
+
+  test("handles extra whitespace", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`spaced-tag\` |  \`type/spaced\`  |  MAP  | Extra whitespace |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["spaced-tag"]).toBe("type/spaced");
+  });
+
+  test("handles case-insensitive actions", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`tag1\` | \`type/a\` | map | lowercase |
+| \`tag2\` | \`type/b\` | Map | mixed |
+| \`tag3\` | (remove) | remove | lowercase remove |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["tag1"]).toBe("type/a");
+    expect(result.mappings["tag2"]).toBe("type/b");
+    expect(result.mappings["tag3"]).toBeNull();
+    expect(result.stats.mapActions).toBe(2);
+    expect(result.stats.removeActions).toBe(1);
+  });
+
+  test("warns when MAP action has no new tag", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`orphan\` | ? | MAP | Oops wrong action |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings[0]).toContain("orphan");
+  });
+});
+
+describe("extractMappingsFromPlanFile", () => {
+  let testVaultPath: string;
+
+  beforeAll(async () => {
+    testVaultPath = await mkdtemp(join(tmpdir(), "plan-extractor-"));
+  });
+
+  afterAll(async () => {
+    await rm(testVaultPath, { recursive: true, force: true });
+  });
+
+  test("returns null when plan file does not exist", async () => {
+    const result = await extractMappingsFromPlanFile(testVaultPath);
+    expect(result).toBeNull();
+  });
+
+  test("extracts mappings from existing plan file", async () => {
+    await writeFile(
+      join(testVaultPath, "_Tag Migration Plan.md"),
+      `---
+tags:
+  - type/report
+---
+# Tag Migration Plan
+
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`todo\` | \`status/pending\` | MAP | Status |
+| \`heading\` | (remove) | REMOVE | Noise |
+`,
+      "utf-8"
+    );
+
+    const result = await extractMappingsFromPlanFile(testVaultPath);
+
+    expect(result).not.toBeNull();
+    expect(result!.success).toBe(true);
+    expect(result!.mappings["todo"]).toBe("status/pending");
+    expect(result!.mappings["heading"]).toBeNull();
+  });
+});
+
+describe("writePlanMappingsJson", () => {
+  let testDataPath: string;
+
+  beforeAll(async () => {
+    testDataPath = await mkdtemp(join(tmpdir(), "plan-mappings-"));
+  });
+
+  afterAll(async () => {
+    await rm(testDataPath, { recursive: true, force: true });
+  });
+
+  test("writes valid JSON file", async () => {
+    const mappings = {
+      "todo": "status/pending",
+      "heading": null,
+    };
+
+    await writePlanMappingsJson(testDataPath, mappings, "Proposed Tagging System.md");
+
+    const content = await readFile(join(testDataPath, "plan-mappings.json"), "utf-8");
+    const parsed = JSON.parse(content);
+
+    expect(parsed.generatedBy).toBe("plan-extractor");
+    expect(parsed.schemeNotePath).toBe("Proposed Tagging System.md");
+    expect(parsed.mappings["todo"]).toBe("status/pending");
+    expect(parsed.mappings["heading"]).toBeNull();
+  });
+
+  test("includes timestamp in output", async () => {
+    const mappings = { "test": "type/test" };
+
+    await writePlanMappingsJson(testDataPath, mappings, "Test.md");
+
+    const content = await readFile(join(testDataPath, "plan-mappings.json"), "utf-8");
+    const parsed = JSON.parse(content);
+
+    expect(parsed.generatedAt).toBeDefined();
+    expect(new Date(parsed.generatedAt).getTime()).not.toBeNaN();
+  });
+});

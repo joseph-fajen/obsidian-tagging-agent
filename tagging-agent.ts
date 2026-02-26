@@ -5,6 +5,7 @@ import { createTagTools } from "./tools/tag-tools.js";
 import { createGitTools } from "./tools/git-tools.js";
 import { createDataTools } from "./tools/data-tools.js";
 import { generateWorklist, loadMappings, formatWorklistMarkdown, writeWorklistJson, type MigrationWorklist, type NoteChanges, type NextBatch } from "./lib/worklist-generator.js";
+import { extractMappingsFromPlanFile, writePlanMappingsJson } from "./lib/plan-extractor.js";
 import { runInteractiveAgent } from "./lib/interactive-agent.js";
 import { join } from "path";
 import { readFile, writeFile, unlink, mkdir } from "fs/promises";
@@ -779,14 +780,47 @@ async function runAgent(config: Config) {
   if (mode === "generate-worklist") {
     console.log("Generating worklist deterministically (no LLM)...\n");
 
-    const auditMappings = await loadMappings(config.dataPath, config.vaultPath);
-    if (auditMappings) {
-      console.log("Loaded audit-discovered mappings from data/audit-data.json");
+    // Step 1: Extract mappings from plan markdown (code-driven)
+    console.log("Extracting mappings from _Tag Migration Plan.md...");
+    const extraction = await extractMappingsFromPlanFile(config.vaultPath);
+
+    if (extraction && extraction.success) {
+      console.log(`  Found ${extraction.stats.totalMappings} mappings:`);
+      console.log(`    MAP: ${extraction.stats.mapActions}`);
+      console.log(`    REMOVE: ${extraction.stats.removeActions}`);
+      console.log(`    KEEP: ${extraction.stats.keepActions}`);
+      if (extraction.stats.unmappedActions > 0) {
+        console.log(`    UNMAPPED: ${extraction.stats.unmappedActions} (need user decision)`);
+      }
+      if (extraction.warnings.length > 0) {
+        console.log(`  Warnings:`);
+        for (const w of extraction.warnings) console.log(`    - ${w}`);
+      }
+
+      // Write plan-mappings.json
+      await writePlanMappingsJson(config.dataPath, extraction.mappings, config.schemeNotePath);
+      console.log(`  Written to data/plan-mappings.json\n`);
     } else {
-      console.log("No audit-data.json found — using hardcoded mappings only");
+      // Check if plan-mappings.json already exists (from previous run or manual creation)
+      const existingMappings = await loadMappings(config.dataPath, config.vaultPath);
+      if (!existingMappings) {
+        console.error("ERROR: Could not extract mappings from _Tag Migration Plan.md");
+        console.error("       and no existing plan-mappings.json found.\n");
+        console.error("Please run 'bun run tagging-agent.ts plan' first to create the migration plan.\n");
+        console.log("=".repeat(60));
+        console.log(`Mode: generate-worklist — prerequisites not met`);
+        console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+        console.log(`Cost: $0.0000 (pre-flight check only)`);
+        console.log("=".repeat(60));
+        return;
+      }
+      console.log("Using existing plan-mappings.json (no extraction from markdown)\n");
     }
 
-    const result = await generateWorklist(config.vaultPath, auditMappings);
+    // Step 2: Load mappings (now guaranteed to exist)
+    const loadedMappings = await loadMappings(config.dataPath, config.vaultPath);
+
+    const result = await generateWorklist(config.vaultPath, loadedMappings);
 
     // Print stats
     console.log(`Notes scanned: ${result.stats.totalNotesScanned}`);

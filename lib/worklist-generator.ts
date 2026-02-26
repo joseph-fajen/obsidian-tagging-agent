@@ -208,113 +208,32 @@ export async function generateWorklist(
 }
 
 /**
- * Extract mappings from various audit-data.json formats.
- * Supports both the expected format (mappings) and alternative formats
- * that the interactive agent may produce.
- */
-function extractMappingsFromAuditData(data: Record<string, unknown>): Record<string, string | null> {
-  const mappings: Record<string, string | null> = {};
-
-  // Expected format: { mappings: { "old-tag": "new-tag" | null } }
-  if (data.mappings && typeof data.mappings === "object") {
-    Object.assign(mappings, data.mappings);
-  }
-
-  // Alternative format: { consolidationOpportunities: { *Priority: [{ migrationMap: {...} }] } }
-  if (data.consolidationOpportunities && typeof data.consolidationOpportunities === "object") {
-    const opportunities = data.consolidationOpportunities as Record<string, unknown>;
-
-    // Process all priority levels (highPriority, mediumPriority, lowPriority)
-    for (const priorityKey of Object.keys(opportunities)) {
-      const priorityItems = opportunities[priorityKey];
-      if (!Array.isArray(priorityItems)) continue;
-
-      for (const item of priorityItems) {
-        if (!item || typeof item !== "object") continue;
-        const itemObj = item as Record<string, unknown>;
-
-        // Extract migrationMap if present
-        if (itemObj.migrationMap && typeof itemObj.migrationMap === "object") {
-          Object.assign(mappings, itemObj.migrationMap);
-        }
-
-        // Extract targetTag for simple consolidations
-        if (typeof itemObj.targetTag === "string" && Array.isArray(itemObj.currentTags)) {
-          const targetTag = itemObj.targetTag as string;
-          for (const oldTag of itemObj.currentTags) {
-            if (typeof oldTag === "string" && oldTag !== targetTag) {
-              mappings[oldTag] = targetTag;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return mappings;
-}
-
-/**
- * Load mappings from plan-mappings.json (primary) or audit-data.json (fallback).
- * Plan mappings are user-approved mappings from the plan phase.
- * Audit mappings are auto-discovered mappings from the audit phase.
+ * Load mappings from plan-mappings.json.
  *
- * Returns undefined if neither file exists.
+ * After the architecture cleanup, mappings come ONLY from the plan phase.
+ * Audit-data.json no longer contains mappings — it only has tag frequencies.
+ *
+ * Returns undefined if plan-mappings.json doesn't exist.
  */
 export async function loadMappings(
   dataPath: string,
-  vaultPath: string,
+  _vaultPath: string, // Kept for API compatibility
 ): Promise<AuditMappings | undefined> {
-  const allMappings: Record<string, string | null> = {};
-
-  // 1. Try plan-mappings.json first (user-approved, highest priority)
   try {
     const raw = await readFile(join(dataPath, "plan-mappings.json"), "utf-8");
     const data = JSON.parse(raw) as { mappings?: Record<string, string | null> };
-    if (data.mappings) {
-      Object.assign(allMappings, data.mappings);
+    if (data.mappings && Object.keys(data.mappings).length > 0) {
+      return { mappings: data.mappings };
     }
   } catch {
-    // Plan mappings don't exist yet — that's fine, fall through
-  }
-
-  // 2. Try audit-data.json (auto-discovered mappings, lower priority)
-  try {
-    const raw = await readFile(join(dataPath, "audit-data.json"), "utf-8");
-    const data = JSON.parse(raw) as Record<string, unknown>;
-    const extractedMappings = extractMappingsFromAuditData(data);
-    // Only add audit mappings that aren't already in plan mappings
-    for (const [key, value] of Object.entries(extractedMappings)) {
-      if (!(key in allMappings)) {
-        allMappings[key] = value;
-      }
-    }
-  } catch {
-    // No audit data — fall through
-  }
-
-  // 3. Vault fallback for backward compatibility
-  try {
-    const raw = await readFile(join(vaultPath, "_Tag Audit Data.json"), "utf-8");
-    const data = JSON.parse(raw) as Record<string, unknown>;
-    const extractedMappings = extractMappingsFromAuditData(data);
-    for (const [key, value] of Object.entries(extractedMappings)) {
-      if (!(key in allMappings)) {
-        allMappings[key] = value;
-      }
-    }
-  } catch {
-    // No vault fallback
-  }
-
-  if (Object.keys(allMappings).length > 0) {
-    return { mappings: allMappings };
+    // Plan mappings don't exist
   }
 
   return undefined;
 }
 
-// Keep old name as alias for backward compatibility
+// Keep old name as alias for backward compatibility (but deprecated)
+/** @deprecated Use loadMappings instead */
 export const loadAuditMappings = loadMappings;
 
 /**

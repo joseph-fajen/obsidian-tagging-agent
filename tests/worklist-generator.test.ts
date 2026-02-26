@@ -207,120 +207,60 @@ describe("generateWorklist", () => {
 });
 
 describe("loadMappings", () => {
-  test("returns undefined when no files exist", async () => {
+  test("returns undefined when no plan-mappings.json exists", async () => {
     const result = await loadMappings(testDataPath, testVaultPath);
     expect(result).toBeUndefined();
   });
 
-  test("loads mappings from audit-data.json in data/", async () => {
+  test("loads mappings from plan-mappings.json", async () => {
     await writeFile(
-      join(testDataPath, "audit-data.json"),
-      JSON.stringify({ mappings: { "custom": "type/custom" } }),
+      join(testDataPath, "plan-mappings.json"),
+      JSON.stringify({
+        generatedBy: "plan-extractor",
+        mappings: { "custom": "type/custom" }
+      }),
     );
     const result = await loadMappings(testDataPath, testVaultPath);
     expect(result).toBeDefined();
     expect(result!.mappings["custom"]).toBe("type/custom");
     // Clean up
+    await rm(join(testDataPath, "plan-mappings.json"));
+  });
+
+  test("ignores audit-data.json (no longer a source for mappings)", async () => {
+    // Only create audit-data.json, not plan-mappings.json
+    await writeFile(
+      join(testDataPath, "audit-data.json"),
+      JSON.stringify({ mappings: { "audit-tag": "type/audit" } }),
+    );
+    const result = await loadMappings(testDataPath, testVaultPath);
+    // Should return undefined because we ONLY load from plan-mappings.json now
+    expect(result).toBeUndefined();
+    // Clean up
     await rm(join(testDataPath, "audit-data.json"));
   });
 
-  test("loads mappings from vault (fallback location)", async () => {
-    await writeFile(
-      join(testVaultPath, "_Tag Audit Data.json"),
-      JSON.stringify({ mappings: { "vault-custom": "type/vault" } }),
-    );
-    const result = await loadMappings(testDataPath, testVaultPath);
-    expect(result).toBeDefined();
-    expect(result!.mappings["vault-custom"]).toBe("type/vault");
-    // Clean up
-    await rm(join(testVaultPath, "_Tag Audit Data.json"));
-  });
-
-  test("plan-mappings.json takes priority over audit-data.json", async () => {
-    // Create both files with different mappings for same tag
+  test("returns undefined for empty mappings object", async () => {
     await writeFile(
       join(testDataPath, "plan-mappings.json"),
-      JSON.stringify({ mappings: { "test-tag": "plan-value" } }),
+      JSON.stringify({ mappings: {} }),
     );
-    await writeFile(
-      join(testDataPath, "audit-data.json"),
-      JSON.stringify({ mappings: { "test-tag": "audit-value" } }),
-    );
-
     const result = await loadMappings(testDataPath, testVaultPath);
-    expect(result).toBeDefined();
-    expect(result!.mappings["test-tag"]).toBe("plan-value"); // plan wins
-
+    // Empty mappings should return undefined
+    expect(result).toBeUndefined();
     // Clean up
     await rm(join(testDataPath, "plan-mappings.json"));
-    await rm(join(testDataPath, "audit-data.json"));
   });
 
-  test("merges plan-mappings with audit-data (plan takes priority)", async () => {
-    // Create plan with one mapping, audit with another
+  test("returns undefined for malformed JSON", async () => {
     await writeFile(
       join(testDataPath, "plan-mappings.json"),
-      JSON.stringify({ mappings: { "from-plan": "plan-value" } }),
+      "{ not valid json }",
     );
-    await writeFile(
-      join(testDataPath, "audit-data.json"),
-      JSON.stringify({ mappings: { "from-audit": "audit-value" } }),
-    );
-
     const result = await loadMappings(testDataPath, testVaultPath);
-    expect(result).toBeDefined();
-    expect(result!.mappings["from-plan"]).toBe("plan-value");
-    expect(result!.mappings["from-audit"]).toBe("audit-value");
-
+    expect(result).toBeUndefined();
     // Clean up
     await rm(join(testDataPath, "plan-mappings.json"));
-    await rm(join(testDataPath, "audit-data.json"));
-  });
-
-  test("extracts mappings from consolidationOpportunities format", async () => {
-    // Create audit-data.json with alternative format (consolidationOpportunities)
-    const auditData = {
-      generatedAt: new Date().toISOString(),
-      consolidationOpportunities: {
-        highPriority: [
-          {
-            category: "Daily Note Variants",
-            targetTag: "type/daily-note",
-            currentTags: ["daily-note", "daily-notes", "daily_log", "daily-reflection"],
-          },
-        ],
-        mediumPriority: [
-          {
-            category: "Project References",
-            migrationMap: {
-              "blockfrost-current-work": "project/blockfrost",
-              "partner-chains-docs": "project/partner-chains",
-            },
-          },
-        ],
-      },
-    };
-    await writeFile(
-      join(testDataPath, "audit-data.json"),
-      JSON.stringify(auditData, null, 2)
-    );
-
-    const result = await loadMappings(testDataPath, testVaultPath);
-    expect(result).toBeDefined();
-
-    // Should extract from migrationMap
-    expect(result!.mappings["blockfrost-current-work"]).toBe("project/blockfrost");
-    expect(result!.mappings["partner-chains-docs"]).toBe("project/partner-chains");
-
-    // Should extract from targetTag + currentTags
-    // All tags in currentTags (including "daily-note") should map to targetTag
-    expect(result!.mappings["daily-note"]).toBe("type/daily-note");
-    expect(result!.mappings["daily-notes"]).toBe("type/daily-note");
-    expect(result!.mappings["daily_log"]).toBe("type/daily-note");
-    expect(result!.mappings["daily-reflection"]).toBe("type/daily-note");
-
-    // Clean up
-    await rm(join(testDataPath, "audit-data.json"));
   });
 
   test("loadAuditMappings is alias for loadMappings", async () => {

@@ -2,21 +2,24 @@
 
 This file tracks the current development state for Claude Code context. It's the single source of truth for what's been implemented, what's pending, and known issues.
 
-**Last Updated:** 2026-02-25
+**Last Updated:** 2026-02-26
 
 ---
 
 ## Current Phase
 
-**Status:** Production-ready — Generalized for any vault
+**Status:** Production-ready — Architecture cleanup complete
 
-The agent now supports dynamic tag mappings defined by the user's schema note, rather than hardcoded mappings. Plan phase writes `plan-mappings.json` which the worklist generator uses. New vaults just need to create a schema note describing their desired tagging system.
+The agent architecture has been refined for reliability and clarity:
+- **Code-driven plan extraction:** `generate-worklist` now parses the markdown mapping table and writes `plan-mappings.json` deterministically — no longer relying on LLM to write JSON
+- **Strict phase separation:** Audit discovers tags; Plan creates mapping table; Code extracts it
+- **Architecture documentation:** New `docs/ARCHITECTURE.md` explains design decisions
 
-**Key Changes:**
-- `TAG_MAPPINGS` minimized to universal noise patterns only
-- `loadMappings()` reads plan-mappings.json + audit-data.json
-- `checkSchemeNoteExists()` validates schema note before audit/plan phases
-- `SCHEME_NOTE_PATH` configurable via env var (default: "Proposed Tagging System.md")
+**Key Changes (2026-02-26):**
+- `lib/plan-extractor.ts` — New module for markdown table parsing
+- `loadMappings()` — Simplified to ONLY load from `plan-mappings.json` (no audit fallback)
+- Audit instructions — No longer request mappings derivation (phase separation)
+- `docs/ARCHITECTURE.md` — Comprehensive design documentation for portfolio
 
 ---
 
@@ -37,6 +40,7 @@ The agent now supports dynamic tag mappings defined by the user's schema note, r
 | `lib/scope-filter.ts` | ✅ Complete | Scope filtering: full, folder, files, recent, tag |
 | `lib/preview-generator.ts` | ✅ Complete | Preview generation without applying changes |
 | `lib/batch-executor.ts` | ✅ Complete | Code-driven batch execution with progress tracking |
+| `lib/plan-extractor.ts` | ✅ Complete | Code-driven extraction of mappings from plan markdown |
 | `tag-scheme.ts` | ✅ Complete | TAG_MAPPINGS, lookupTagMapping(), noise patterns |
 
 ### MCP Tools ✅
@@ -87,10 +91,18 @@ The agent now supports dynamic tag mappings defined by the user's schema note, r
 | Interactive Agent Experience | `.agents/plans/interactive-agent-experience.md` | ✅ Yes |
 | Supervisor/Worker Architecture | `.agents/plans/supervisor-worker-implementation.md` | ✅ Yes |
 | Plan Phase Audit Data Usage | `.agents/plans/fix-plan-phase-audit-data-usage.md` | ✅ Yes |
+| Architecture Cleanup | `.agents/plans/architecture-cleanup-and-documentation.md` | ✅ Yes |
 
 ---
 
 ## Known Issues
+
+### Recently Fixed (2026-02-26)
+
+1. **Plan phase didn't reliably write `plan-mappings.json`** — Fixed with code-driven extraction
+   - Root cause: LLM ignored JSON writing instructions despite explicit prompts
+   - Solution: `lib/plan-extractor.ts` parses markdown mapping table and writes JSON deterministically
+   - Result: Reliable mappings extraction, clear phase separation
 
 ### Recently Fixed (2026-02-05 evening)
 
@@ -137,6 +149,11 @@ The agent now supports dynamic tag mappings defined by the user's schema note, r
    - LLM handles: conversation, intent parsing, scope selection, exception handling
    - Code handles: deterministic execution, progress tracking, git commits
    - **Rationale:** 10x cost reduction, predictable execution, better progress tracking
+
+3. **Code-driven extraction pattern (2026-02-26)**
+   - When LLMs unreliably follow instructions, move critical work to code
+   - Plan phase writes human-readable markdown; code extracts to JSON
+   - **Rationale:** Reliable mappings, clear audit trail, deterministic behavior
 
 ---
 
