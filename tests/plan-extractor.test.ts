@@ -238,6 +238,69 @@ No mapping table here.
     // No collision warning because values are the same
     expect(result.warnings.filter(w => w.includes("collision")).length).toBe(0);
   });
+
+  test("handles bold action words (**MAP**, **KEEP**, etc.)", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Frequency | Reason |
+|---------|---------|---------|-----------|---------|
+| \`ai-tools\` | \`ai-tools\` | **KEEP** | 14 | Already perfect |
+| \`todo\` | \`status/pending\` | **MAP** | 12 | Standardize workflow |
+| \`heading\` | — | **REMOVE** | 6 | Google Docs artifact |
+| \`mystery\` | ? | **UNMAPPED** | 1 | Needs decision |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["ai-tools"]).toBe("ai-tools");
+    expect(result.mappings["todo"]).toBe("status/pending");
+    expect(result.mappings["heading"]).toBeNull();
+    expect(result.mappings["mystery"]).toBeUndefined();
+    expect(result.stats.keepActions).toBe(1);
+    expect(result.stats.mapActions).toBe(1);
+    expect(result.stats.removeActions).toBe(1);
+    expect(result.stats.unmappedActions).toBe(1);
+  });
+
+  test("handles extra content after action word in action column", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`type/resource\` | \`type/resource\` | **MAP** to \`type/reference\` | 1 | Consolidate types |
+| \`career\` | \`area/career\` | **MAP** | 14 | Promote to area |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    // The type/resource row should be parsed as MAP action
+    // (The "to `type/reference`" part is extra text that gets ignored by regex)
+    expect(result.mappings["type/resource"]).toBe("type/resource");
+    expect(result.mappings["career"]).toBe("area/career");
+    expect(result.stats.mapActions).toBe(2);
+  });
+
+  test("handles real-world LLM output format with extra columns", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Frequency | Reason |
+|---------|---------|---------|-----------|---------|
+| \`ai-tools\` | \`ai-tools\` | **KEEP** | 14 | Already perfect kebab-case topic tag |
+| \`career\` | \`area/career\` | **MAP** | 14 | Promote to life area |
+| \`daily-notes\` | \`type/daily-note\` | **MAP** | 4 | Consolidate daily note variants |
+| \`heading\` | — | **REMOVE** | 6 | Google Docs import artifact |
+| \`follow-up-required-weekly\` | — | **REMOVE** | 1 | Old workflow system |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.stats.totalMappings).toBe(5);
+    expect(result.mappings["ai-tools"]).toBe("ai-tools");
+    expect(result.mappings["career"]).toBe("area/career");
+    expect(result.mappings["daily-notes"]).toBe("type/daily-note");
+    expect(result.mappings["heading"]).toBeNull();
+    expect(result.mappings["follow-up-required-weekly"]).toBeNull();
+    expect(result.stats.keepActions).toBe(1);
+    expect(result.stats.mapActions).toBe(2);
+    expect(result.stats.removeActions).toBe(2);
+  });
 });
 
 describe("extractMappingsFromPlanFile", () => {

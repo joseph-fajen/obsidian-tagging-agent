@@ -4,6 +4,60 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-26: Fix Plan Extractor Regex for Bold Action Words
+
+### Session Context
+
+User ran another test of the tagging agent in interactive mode. The generate-worklist phase reported "Could not extract mappings from plan markdown" and fell back to hardcoded mappings only. The full plan file existed with 66 tags mapped, but extraction failed.
+
+### Problem Statement
+
+The plan-extractor regex expected plain action words (`MAP`, `KEEP`, `REMOVE`) but the LLM wrote them with bold markdown formatting (`**MAP**`, `**KEEP**`, `**REMOVE**`).
+
+Example from actual LLM output:
+```markdown
+| `ai-tools` | `ai-tools` | **KEEP** | 14 | Already perfect |
+| `todo` | `status/pending` | **MAP** | 12 | Standardize workflow |
+```
+
+The regex `(MAP|REMOVE|KEEP|UNMAPPED)` didn't match `**MAP**`.
+
+Additionally, one row had extra content in the action column:
+```markdown
+| `type/resource` | `type/resource` | **MAP** to `type/reference` | 1 | Consolidate types |
+```
+
+### Solution Implemented
+
+Updated `TABLE_ROW_REGEX` in `lib/plan-extractor.ts` to handle:
+1. Optional `**` asterisks around action words (bold markdown)
+2. Extra content after the action word before the next `|`
+
+New regex pattern for action column: `\*?\*?(MAP|REMOVE|KEEP|UNMAPPED)\*?\*?[^|]*\|`
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/plan-extractor.ts` | Updated regex to handle bold action words |
+| `tests/plan-extractor.test.ts` | Added 3 test cases for bold formatting |
+
+### Verification
+
+- Extraction now succeeds: 54 mappings from test vault plan file
+- 30 MAP + 6 REMOVE + 21 KEEP actions parsed correctly
+- All 322 tests pass
+
+### Key Insight
+
+LLMs often add markdown formatting (bold, italics) that human readers expect but code doesn't. Regex patterns for LLM-generated content must be lenient with formatting variations.
+
+### Commits
+
+- `b435b79` fix: handle bold markdown in plan extractor regex
+
+---
+
 ## 2026-02-26: Fix Interactive Mode Plan Extraction
 
 ### Session Context

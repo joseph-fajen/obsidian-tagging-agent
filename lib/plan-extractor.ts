@@ -26,13 +26,15 @@ export interface PlanExtractionResult {
  * - Whitespace flexible (tight or spaced formatting)
  * - Action case-insensitive
  * - New tag can be: `tag`, (remove), —, -, or ?
+ * - Action can be bold: **MAP**, **KEEP**, etc.
+ * - Action column may have extra text after action word (e.g., "**MAP** to `type/reference`")
  *
  * Captures:
  * - Group 1: old tag (without backticks)
  * - Group 2: new tag (without backticks), or undefined for removal indicators
  * - Group 3: action (MAP, REMOVE, KEEP, UNMAPPED)
  */
-const TABLE_ROW_REGEX = /^\|\s*`?([^`|\n]+?)`?\s*\|\s*(?:`([^`|\n]+?)`|—|-|\(remove\)|\?|)\s*\|\s*(MAP|REMOVE|KEEP|UNMAPPED)\s*\|/gim;
+const TABLE_ROW_REGEX = /^\|\s*`?([^`|\n]+?)`?\s*\|\s*(?:`([^`|\n]+?)`|—|-|\(remove\)|\?|)\s*\|\s*\*?\*?(MAP|REMOVE|KEEP|UNMAPPED)\*?\*?[^|]*\|/gim;
 
 /**
  * Extract tag mappings from a plan markdown string.
