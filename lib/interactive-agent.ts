@@ -219,14 +219,33 @@ async function computeNextBatch(
   const progressPath = join(dataPath, "migration-progress.json");
   let processedPaths = new Set<string>();
   let processedCount = 0;
+  let progressStartedAt: string | undefined;
 
   try {
     const progressRaw = await readFile(progressPath, "utf-8");
     const progress = JSON.parse(progressRaw);
     processedPaths = new Set(progress.processedPaths || []);
     processedCount = progress.processedCount || 0;
+    progressStartedAt = progress.startedAt;
   } catch {
     // No progress file — starting fresh
+  }
+
+  // Staleness detection: if worklist was regenerated after migration started, reset progress
+  // This handles cases where the vault was reset (e.g., git checkout) but progress file wasn't cleared
+  if (progressStartedAt && worklist.generatedAt) {
+    const worklistTime = new Date(worklist.generatedAt).getTime();
+    const progressTime = new Date(progressStartedAt).getTime();
+    if (worklistTime > progressTime) {
+      console.log("⚠️  Worklist was regenerated after migration started — resetting progress");
+      processedPaths = new Set();
+      processedCount = 0;
+      try {
+        await unlink(progressPath);
+      } catch {
+        // File doesn't exist — that's fine
+      }
+    }
   }
 
   // Check if complete

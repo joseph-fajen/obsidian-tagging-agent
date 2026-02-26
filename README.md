@@ -271,6 +271,33 @@ These files are stored outside the vault to:
 
 Human-readable reports (`_Tag Audit Report.md`, `_Tag Migration Plan.md`, `_Tag Migration Verification.md`) remain in the vault.
 
+## Starting Over
+
+To reset and run a fresh migration:
+
+1. **Clear data files:**
+   ```bash
+   rm -f data/*.json
+   ```
+
+2. **Optionally reset vault** (if you want to undo applied changes):
+   ```bash
+   cd /path/to/vault
+   git log --oneline        # Find commit before migration
+   git reset --hard <hash>  # Reset to that commit
+   ```
+
+The agent auto-detects some stale state (e.g., worklist regenerated after migration started), but clearing `data/` is the safest way to ensure a clean start.
+
+**When to clear `data/`:**
+- Starting fresh on a new vault
+- Vault was modified externally (git reset, manual tag edits)
+- Something went wrong and you want to retry
+
+**When to keep `data/`:**
+- Resuming an interrupted migration
+- Re-running just the execute phase after reviewing the plan
+
 ## Tests
 
 ```bash
