@@ -1,6 +1,8 @@
 ---
-status: PENDING
+status: SUPERSEDED
 created: 2026-02-05
+superseded_by: supervisor-worker-implementation.md
+note: Design document — implementation tracked in separate plan
 ---
 
 # Design: Path C — Supervisor/Worker Architecture
