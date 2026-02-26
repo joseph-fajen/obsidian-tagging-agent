@@ -54,7 +54,7 @@ LLMs often add markdown formatting (bold, italics) that human readers expect but
 
 ### Commits
 
-- `b435b79` fix: handle bold markdown in plan extractor regex
+- `188c825` fix: handle bold markdown in plan extractor regex
 
 ---
 
