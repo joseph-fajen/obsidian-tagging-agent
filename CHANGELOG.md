@@ -4,6 +4,51 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-26: Fix Interactive Mode Plan Extraction
+
+### Session Context
+
+User ran a fresh test of the tagging agent in interactive mode against a test vault. The migration completed successfully for inline tag migration and noise removal, but hierarchical mappings (todo → status/pending, etc.) were not applied despite the plan phase creating a comprehensive mapping table.
+
+### Problem Statement
+
+The interactive mode's `runGenerateWorklistPhase()` function in `lib/interactive-agent.ts` was missing the plan extraction step that the CLI mode (`tagging-agent.ts`) has:
+
+1. **CLI mode (correct):** extracts mappings from markdown → writes plan-mappings.json → loads mappings → generates worklist
+2. **Interactive mode (broken):** skips extraction → tries to load plan-mappings.json (doesn't exist) → falls back to hardcoded TAG_MAPPINGS only
+
+This caused the interactive mode to only apply inline-to-frontmatter migration and noise removal (handled by hardcoded patterns), while ignoring all the custom mappings the LLM created in the plan phase.
+
+### Root Cause
+
+When the architecture cleanup added code-driven plan extraction (earlier on 2026-02-26), only the CLI mode in `tagging-agent.ts` was updated. The parallel code path in `lib/interactive-agent.ts` was not updated, creating a divergence.
+
+### Solution Implemented
+
+Updated `runGenerateWorklistPhase()` in `lib/interactive-agent.ts` to:
+1. Call `extractMappingsFromPlanFile()` to parse the markdown mapping table
+2. Write `plan-mappings.json` via `writePlanMappingsJson()`
+3. Then load mappings from `plan-mappings.json` (where they now exist)
+4. Generate worklist using the loaded mappings
+
+Also fixed outdated log message that said "No audit-data.json found" (should reference plan-mappings.json after architecture cleanup).
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/interactive-agent.ts` | Added plan extraction step; updated imports |
+
+### Key Insight
+
+Code paths must be kept in sync. The CLI mode and interactive mode shared the same underlying `generateWorklist()` function but had divergent setup code. The fix ensures both modes now follow the same extraction → write → load → generate flow.
+
+### Commits
+
+- `<pending>` fix: add plan extraction to interactive mode
+
+---
+
 ## 2026-02-26: Architecture Cleanup — Code-Driven Plan Extraction
 
 ### Session Context

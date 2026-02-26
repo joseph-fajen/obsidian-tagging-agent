@@ -29,10 +29,14 @@ import {
 } from "./agent-personality.js";
 import {
   generateWorklist,
-  loadAuditMappings,
+  loadMappings,
   formatWorklistMarkdown,
   writeWorklistJson,
 } from "./worklist-generator.js";
+import {
+  extractMappingsFromPlanFile,
+  writePlanMappingsJson,
+} from "./plan-extractor.js";
 import { createVaultTools } from "../tools/vault-tools.js";
 import { createTagTools } from "../tools/tag-tools.js";
 import { createGitTools } from "../tools/git-tools.js";
@@ -394,17 +398,40 @@ async function runGenerateWorklistPhase(config: Config): Promise<boolean> {
   console.log();
 
   try {
-    const auditMappings = await loadAuditMappings(
-      config.dataPath,
-      config.vaultPath
-    );
-    if (auditMappings) {
-      console.log("Loaded audit-discovered mappings from data/audit-data.json");
+    // Step 1: Extract mappings from plan markdown (code-driven)
+    console.log("Extracting mappings from _Tag Migration Plan.md...");
+    const extraction = await extractMappingsFromPlanFile(config.vaultPath);
+
+    if (extraction && extraction.success) {
+      console.log(`  Found ${extraction.stats.totalMappings} mappings:`);
+      console.log(`    MAP: ${extraction.stats.mapActions}`);
+      console.log(`    REMOVE: ${extraction.stats.removeActions}`);
+      console.log(`    KEEP: ${extraction.stats.keepActions}`);
+      if (extraction.stats.unmappedActions > 0) {
+        console.log(`    UNMAPPED: ${extraction.stats.unmappedActions} (need user decision)`);
+      }
+      if (extraction.warnings.length > 0) {
+        console.log(`  Warnings:`);
+        for (const w of extraction.warnings) console.log(`    - ${w}`);
+      }
+
+      // Write plan-mappings.json
+      await writePlanMappingsJson(config.dataPath, extraction.mappings, config.schemeNotePath);
+      console.log(`  Written to data/plan-mappings.json\n`);
     } else {
-      console.log("No audit-data.json found — using hardcoded mappings only");
+      console.log("Could not extract mappings from plan markdown.");
+      console.log("Checking for existing plan-mappings.json...\n");
     }
 
-    const result = await generateWorklist(config.vaultPath, auditMappings);
+    // Step 2: Load mappings (now should include extracted mappings)
+    const planMappings = await loadMappings(config.dataPath, config.vaultPath);
+    if (planMappings) {
+      console.log(`Loaded ${Object.keys(planMappings.mappings).length} mappings from plan-mappings.json`);
+    } else {
+      console.log("No plan-mappings.json found — using hardcoded mappings only");
+    }
+
+    const result = await generateWorklist(config.vaultPath, planMappings);
 
     // Print stats
     console.log(`Notes scanned: ${result.stats.totalNotesScanned}`);

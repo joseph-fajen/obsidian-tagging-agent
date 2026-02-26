@@ -99,7 +99,12 @@ The agent architecture has been refined for reliability and clarity:
 
 ### Recently Fixed (2026-02-26)
 
-1. **Plan phase didn't reliably write `plan-mappings.json`** — Fixed with code-driven extraction
+1. **Interactive mode skipped plan extraction** — Fixed by syncing code paths
+   - Root cause: `runGenerateWorklistPhase()` in interactive-agent.ts was missing the extraction step
+   - Solution: Added `extractMappingsFromPlanFile()` and `writePlanMappingsJson()` calls to match CLI mode
+   - Result: Interactive mode now correctly applies LLM-generated mappings (todo → status/pending, etc.)
+
+2. **Plan phase didn't reliably write `plan-mappings.json`** — Fixed with code-driven extraction
    - Root cause: LLM ignored JSON writing instructions despite explicit prompts
    - Solution: `lib/plan-extractor.ts` parses markdown mapping table and writes JSON deterministically
    - Result: Reliable mappings extraction, clear phase separation
