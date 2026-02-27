@@ -4,6 +4,86 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-02-26: Fix Underscore/Case Tag Handling and Simplify Interactive Flow
+
+### Session Context
+
+User ran a test migration on a test vault and noticed that Edge Cases notes with underscore tags (`ai_tools`, `technical_writing`) and mixed-case tags (`AI-Tools`, `Career`) were not being properly migrated, even though the plan phase correctly identified them with "Fix Format" and "Fix Case" actions.
+
+Additionally, the interactive flow had redundant prompts where the user had to press "1" multiple times in a row (e.g., after AUDIT → REVIEW_AUDIT → PLAN).
+
+### Problem Statement
+
+Three issues were identified:
+
+1. **Plan extractor didn't recognize FIX actions:** The regex only matched `MAP|REMOVE|KEEP|UNMAPPED`. When the LLM wrote "Fix Format" or "Fix Case" in the action column, those rows were silently skipped.
+
+2. **Redundant REVIEW_* phases:** The flow had 12 phases (WELCOME → AUDIT → REVIEW_AUDIT → PLAN → REVIEW_PLAN → etc.) but the REVIEW_* phases did nothing except show a message and prompt again.
+
+3. **Tag lookup normalized too early:** `lookupTagMapping()` normalized underscores to hyphens BEFORE checking mappings, so `ai_tools` became `ai-tools` and found the identity mapping `ai-tools: ai-tools` (KEEP) instead of the format-fix mapping `ai_tools: ai-tools` (should be MAP).
+
+### Solution Implemented
+
+**Fix 1: Plan extractor regex**
+- Added `FIX` to the regex pattern: `(MAP|REMOVE|KEEP|UNMAPPED|FIX)`
+- Added `fixActions` counter to stats
+- Updated display output to show FIX count separately
+
+**Fix 2: Simplified interactive flow**
+- Removed all REVIEW_* phases from `AgentPhase` type
+- Updated `getPhaseName()` and `getNextPhase()` to use simplified flow
+- Combined transition messages with phase completion (no separate review step)
+- Flow is now: WELCOME → AUDIT → PLAN → GENERATE_WORKLIST → EXECUTE → VERIFY → COMPLETE
+
+**Fix 3: Tag lookup order**
+- Check original tag (lowercase only) in mappings FIRST
+- Then check normalized form (underscores → hyphens)
+- This ensures `ai_tools` finds its mapping before being normalized to `ai-tools`
+
+**Fix 4: Case-only changes (discovered during testing)**
+- When action is "keep" but original tag differs from newTag (case difference), treat as format-change
+- Example: `AI-Tools` vs `ai-tools` — now properly tracked for migration
+
+**Fix 5: Tag count validation**
+- Added validation in `checkPlanPrerequisites` to warn if `uniqueTags` header doesn't match `tagFrequencies` count
+- Added validation in worklist generation to compare extracted mappings with audit tag count
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/plan-extractor.ts` | Added FIX action to regex, added fixActions stat |
+| `lib/session-state.ts` | Removed REVIEW_* phases from type and flow |
+| `lib/agent-personality.ts` | Updated transition prompts for simplified flow |
+| `lib/interactive-agent.ts` | Removed REVIEW_* handling, added validation warnings |
+| `lib/worklist-generator.ts` | Treat case differences as format changes |
+| `tag-scheme.ts` | Check original tag before underscore normalization |
+| `tagging-agent.ts` | Added FIX stats display and tag count validation |
+| `tests/session-state.test.ts` | Updated for simplified flow |
+| `tests/agent-personality.test.ts` | Updated transition tests |
+| `tests/interactive-agent.test.ts` | Updated state transition tests |
+| `tests/plan-extractor.test.ts` | Added tests for FIX actions |
+
+### Verification
+
+- All 325 tests passing
+- Test vault edge cases now correctly mapped:
+  - `ai_tools` → `ai-tools` ✓
+  - `technical_writing` → `technical-writing` ✓
+  - `AI-Tools` → `ai-tools` ✓
+  - `Career` → `area/career` ✓
+- Interactive flow reduced from 12 phases to 7 phases
+
+### Key Insight
+
+When LLMs generate content with semantic variations (like "Fix Format" vs "MAP"), the extraction code must be lenient. Similarly, when normalizing tags, the order of operations matters: check the original form first to detect format changes, then normalize.
+
+### Commits
+
+- `922a46c` fix: handle underscore/case tags and simplify interactive flow
+
+---
+
 ## 2026-02-26: Fix Plan Extractor Regex for Bold Action Words
 
 ### Session Context
