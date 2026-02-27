@@ -15,19 +15,17 @@ import type { WorkScope } from "./types.js";
 
 /**
  * The current phase of the interactive agent workflow.
+ *
+ * Note: REVIEW_* phases have been removed to simplify the flow.
+ * Each main phase now handles its own transition messaging.
  */
 export type AgentPhase =
   | "WELCOME"
   | "AUDIT"
-  | "REVIEW_AUDIT"
   | "PLAN"
-  | "REVIEW_PLAN"
   | "GENERATE_WORKLIST"
-  | "REVIEW_WORKLIST"
   | "EXECUTE"
-  | "REVIEW_EXECUTE"
   | "VERIFY"
-  | "REVIEW_VERIFY"
   | "COMPLETE";
 
 /**
@@ -133,15 +131,10 @@ export function getPhaseName(phase: AgentPhase): string {
   const names: Record<AgentPhase, string> = {
     WELCOME: "Welcome",
     AUDIT: "Audit",
-    REVIEW_AUDIT: "Review Audit",
     PLAN: "Plan",
-    REVIEW_PLAN: "Review Plan",
     GENERATE_WORKLIST: "Generate Worklist",
-    REVIEW_WORKLIST: "Review Worklist",
     EXECUTE: "Execute",
-    REVIEW_EXECUTE: "Review Execute",
     VERIFY: "Verify",
-    REVIEW_VERIFY: "Review Verify",
     COMPLETE: "Complete",
   };
   return names[phase];
@@ -155,15 +148,10 @@ export function getNextPhase(currentPhase: AgentPhase): AgentPhase | null {
   const order: AgentPhase[] = [
     "WELCOME",
     "AUDIT",
-    "REVIEW_AUDIT",
     "PLAN",
-    "REVIEW_PLAN",
     "GENERATE_WORKLIST",
-    "REVIEW_WORKLIST",
     "EXECUTE",
-    "REVIEW_EXECUTE",
     "VERIFY",
-    "REVIEW_VERIFY",
     "COMPLETE",
   ];
   const currentIndex = order.indexOf(currentPhase);

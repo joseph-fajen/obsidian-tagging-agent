@@ -172,15 +172,10 @@ describe("session-state", () => {
     test("returns human-readable names for all phases", () => {
       expect(getPhaseName("WELCOME")).toBe("Welcome");
       expect(getPhaseName("AUDIT")).toBe("Audit");
-      expect(getPhaseName("REVIEW_AUDIT")).toBe("Review Audit");
       expect(getPhaseName("PLAN")).toBe("Plan");
-      expect(getPhaseName("REVIEW_PLAN")).toBe("Review Plan");
       expect(getPhaseName("GENERATE_WORKLIST")).toBe("Generate Worklist");
-      expect(getPhaseName("REVIEW_WORKLIST")).toBe("Review Worklist");
       expect(getPhaseName("EXECUTE")).toBe("Execute");
-      expect(getPhaseName("REVIEW_EXECUTE")).toBe("Review Execute");
       expect(getPhaseName("VERIFY")).toBe("Verify");
-      expect(getPhaseName("REVIEW_VERIFY")).toBe("Review Verify");
       expect(getPhaseName("COMPLETE")).toBe("Complete");
     });
   });
@@ -188,16 +183,11 @@ describe("session-state", () => {
   describe("getNextPhase", () => {
     test("returns correct next phase for each phase", () => {
       expect(getNextPhase("WELCOME")).toBe("AUDIT");
-      expect(getNextPhase("AUDIT")).toBe("REVIEW_AUDIT");
-      expect(getNextPhase("REVIEW_AUDIT")).toBe("PLAN");
-      expect(getNextPhase("PLAN")).toBe("REVIEW_PLAN");
-      expect(getNextPhase("REVIEW_PLAN")).toBe("GENERATE_WORKLIST");
-      expect(getNextPhase("GENERATE_WORKLIST")).toBe("REVIEW_WORKLIST");
-      expect(getNextPhase("REVIEW_WORKLIST")).toBe("EXECUTE");
-      expect(getNextPhase("EXECUTE")).toBe("REVIEW_EXECUTE");
-      expect(getNextPhase("REVIEW_EXECUTE")).toBe("VERIFY");
-      expect(getNextPhase("VERIFY")).toBe("REVIEW_VERIFY");
-      expect(getNextPhase("REVIEW_VERIFY")).toBe("COMPLETE");
+      expect(getNextPhase("AUDIT")).toBe("PLAN");
+      expect(getNextPhase("PLAN")).toBe("GENERATE_WORKLIST");
+      expect(getNextPhase("GENERATE_WORKLIST")).toBe("EXECUTE");
+      expect(getNextPhase("EXECUTE")).toBe("VERIFY");
+      expect(getNextPhase("VERIFY")).toBe("COMPLETE");
     });
 
     test("returns null for COMPLETE phase", () => {

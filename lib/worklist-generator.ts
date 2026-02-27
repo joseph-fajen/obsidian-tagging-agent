@@ -149,14 +149,22 @@ export async function generateWorklist(
         case "remove":
           changes.push({ oldTag: tag, newTag: null, reason: "noise-removal" });
           break;
-        case "keep":
-          // Generate change if tag is inline (needs migration to frontmatter)
-          if (isInline) {
+        case "keep": {
+          // Check if original tag differs from newTag (case/format difference)
+          // e.g., "AI-Tools" vs "ai-tools" — these should be format changes
+          const needsFormatFix = tag !== lookup.newTag;
+
+          if (needsFormatFix) {
+            // Original tag has different case/format — treat as format change
+            changes.push({ oldTag: tag, newTag: lookup.newTag, reason: "format-change" });
+          } else if (isInline) {
+            // Tag is inline but already correct format — just needs migration to frontmatter
             changes.push({ oldTag: tag, newTag: tag, reason: "inline-migration" });
             inlineMigrations++;
           }
-          // Skip if tag is ONLY in frontmatter (truly no change needed)
+          // Skip if tag is ONLY in frontmatter and already correct (truly no change needed)
           break;
+        }
         case "unmapped": {
           // Track for the unmapped report
           const existing = unmappedTracker.get(tag);

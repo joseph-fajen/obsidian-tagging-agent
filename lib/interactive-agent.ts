@@ -424,6 +424,9 @@ async function runGenerateWorklistPhase(config: Config): Promise<boolean> {
     if (extraction && extraction.success) {
       console.log(`  Found ${extraction.stats.totalMappings} mappings:`);
       console.log(`    MAP: ${extraction.stats.mapActions}`);
+      if (extraction.stats.fixActions > 0) {
+        console.log(`    FIX: ${extraction.stats.fixActions} (format/case corrections)`);
+      }
       console.log(`    REMOVE: ${extraction.stats.removeActions}`);
       console.log(`    KEEP: ${extraction.stats.keepActions}`);
       if (extraction.stats.unmappedActions > 0) {
@@ -436,7 +439,26 @@ async function runGenerateWorklistPhase(config: Config): Promise<boolean> {
 
       // Write plan-mappings.json
       await writePlanMappingsJson(config.dataPath, extraction.mappings, config.schemeNotePath);
-      console.log(`  Written to data/plan-mappings.json\n`);
+      console.log(`  Written to data/plan-mappings.json`);
+
+      // Validate extraction count against audit data
+      try {
+        const auditDataPath = join(config.dataPath, "audit-data.json");
+        const auditRaw = await readFile(auditDataPath, "utf-8");
+        const auditData = JSON.parse(auditRaw);
+        if (auditData.tagFrequencies) {
+          const auditTagCount = Object.keys(auditData.tagFrequencies).length;
+          const extractedCount = extraction.stats.totalMappings;
+          if (extractedCount < auditTagCount) {
+            const missing = auditTagCount - extractedCount;
+            console.log(`  ⚠️  Mapping count mismatch: extracted ${extractedCount}, audit found ${auditTagCount}`);
+            console.log(`     ${missing} tags may not have been included in the plan table`);
+          }
+        }
+      } catch {
+        // audit-data.json not found — skip validation
+      }
+      console.log();
     } else {
       console.log("Could not extract mappings from plan markdown.");
       console.log("Checking for existing plan-mappings.json...\n");
@@ -686,31 +708,19 @@ export async function runInteractiveAgent(config: Config): Promise<void> {
       } else if (phase === "GENERATE_WORKLIST") {
         // Deterministic code phase (no LLM)
         phaseSuccess = await runGenerateWorklistPhase(config);
-      } else if (phase.startsWith("REVIEW_")) {
-        // Review phases — just show transition message
-        const nextPhase = getNextPhase(phase);
-        if (nextPhase) {
-          printMessage(
-            buildPhaseTransitionPrompt(phase, nextPhase, { notesRemaining })
-          );
-        }
       }
 
       // Save state after each phase
       await saveSessionState(config.dataPath, state);
 
       // Determine next action
-      if (phase.startsWith("REVIEW_") || phaseSuccess) {
-        // Show transition message for non-review phases
-        if (!phase.startsWith("REVIEW_") && phaseSuccess) {
-          const reviewPhase = `REVIEW_${phase.replace("REVIEW_", "")}` as AgentPhase;
-          // Check if current phase transitions to a review phase
-          const nextPhase = getNextPhase(phase);
-          if (nextPhase) {
-            printMessage(
-              buildPhaseTransitionPrompt(phase, nextPhase, { notesRemaining })
-            );
-          }
+      if (phaseSuccess) {
+        // Show transition message
+        const nextPhase = getNextPhase(phase);
+        if (nextPhase) {
+          printMessage(
+            buildPhaseTransitionPrompt(phase, nextPhase, { notesRemaining })
+          );
         }
 
         // For EXECUTE with remaining notes, offer to continue batch or move on
@@ -740,7 +750,7 @@ export async function runInteractiveAgent(config: Config): Promise<void> {
           }
         }
 
-        // For EXECUTE with no remaining, transition to REVIEW_EXECUTE then VERIFY
+        // For EXECUTE with no remaining, transition to VERIFY
         if (phase === "EXECUTE" && notesRemaining === 0) {
           state = transitionState(state, "continue", true);
           await saveSessionState(config.dataPath, state);
@@ -779,7 +789,7 @@ export async function runInteractiveAgent(config: Config): Promise<void> {
     // Completion
     if (state.currentPhase === "COMPLETE") {
       printHeader("Migration Complete!");
-      printMessage(buildPhaseTransitionPrompt("REVIEW_VERIFY", "COMPLETE"));
+      printMessage(buildPhaseTransitionPrompt("VERIFY", "COMPLETE"));
 
       // Clear session state since we're done
       await clearSessionState(config.dataPath);

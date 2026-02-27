@@ -18,10 +18,10 @@ describe("interactive-agent state transitions", () => {
 
     test("returns same state when user chooses review", () => {
       const state = createInitialState("/test/vault");
-      state.currentPhase = "REVIEW_AUDIT";
+      state.currentPhase = "AUDIT";
 
       const result = transitionState(state, "review", true);
-      expect(result.currentPhase).toBe("REVIEW_AUDIT");
+      expect(result.currentPhase).toBe("AUDIT");
     });
 
     test("returns same state when phase failed", () => {
@@ -40,89 +40,48 @@ describe("interactive-agent state transitions", () => {
       expect(result.currentPhase).toBe("AUDIT");
     });
 
-    test("transitions from AUDIT to REVIEW_AUDIT", () => {
+    test("transitions from AUDIT to PLAN", () => {
       const state = createInitialState("/test/vault");
       state.currentPhase = "AUDIT";
 
       const result = transitionState(state, "continue", true);
-      expect(result.currentPhase).toBe("REVIEW_AUDIT");
+      expect(result.currentPhase).toBe("PLAN");
       expect(result.auditComplete).toBe(true);
     });
 
-    test("transitions from REVIEW_AUDIT to PLAN", () => {
-      const state = createInitialState("/test/vault");
-      state.currentPhase = "REVIEW_AUDIT";
-      state.auditComplete = true;
-
-      const result = transitionState(state, "continue", true);
-      expect(result.currentPhase).toBe("PLAN");
-    });
-
-    test("transitions from PLAN to REVIEW_PLAN", () => {
+    test("transitions from PLAN to GENERATE_WORKLIST", () => {
       const state = createInitialState("/test/vault");
       state.currentPhase = "PLAN";
 
       const result = transitionState(state, "continue", true);
-      expect(result.currentPhase).toBe("REVIEW_PLAN");
+      expect(result.currentPhase).toBe("GENERATE_WORKLIST");
       expect(result.planComplete).toBe(true);
     });
 
-    test("transitions from REVIEW_PLAN to GENERATE_WORKLIST", () => {
-      const state = createInitialState("/test/vault");
-      state.currentPhase = "REVIEW_PLAN";
-
-      const result = transitionState(state, "continue", true);
-      expect(result.currentPhase).toBe("GENERATE_WORKLIST");
-    });
-
-    test("transitions from GENERATE_WORKLIST to REVIEW_WORKLIST", () => {
+    test("transitions from GENERATE_WORKLIST to EXECUTE", () => {
       const state = createInitialState("/test/vault");
       state.currentPhase = "GENERATE_WORKLIST";
 
       const result = transitionState(state, "continue", true);
-      expect(result.currentPhase).toBe("REVIEW_WORKLIST");
+      expect(result.currentPhase).toBe("EXECUTE");
       expect(result.worklistGenerated).toBe(true);
     });
 
-    test("transitions from REVIEW_WORKLIST to EXECUTE", () => {
-      const state = createInitialState("/test/vault");
-      state.currentPhase = "REVIEW_WORKLIST";
-
-      const result = transitionState(state, "continue", true);
-      expect(result.currentPhase).toBe("EXECUTE");
-    });
-
-    test("transitions from EXECUTE to REVIEW_EXECUTE", () => {
+    test("transitions from EXECUTE to VERIFY", () => {
       const state = createInitialState("/test/vault");
       state.currentPhase = "EXECUTE";
-
-      const result = transitionState(state, "continue", true);
-      expect(result.currentPhase).toBe("REVIEW_EXECUTE");
-    });
-
-    test("transitions from REVIEW_EXECUTE to VERIFY", () => {
-      const state = createInitialState("/test/vault");
-      state.currentPhase = "REVIEW_EXECUTE";
 
       const result = transitionState(state, "continue", true);
       expect(result.currentPhase).toBe("VERIFY");
     });
 
-    test("transitions from VERIFY to REVIEW_VERIFY", () => {
+    test("transitions from VERIFY to COMPLETE", () => {
       const state = createInitialState("/test/vault");
       state.currentPhase = "VERIFY";
 
       const result = transitionState(state, "continue", true);
-      expect(result.currentPhase).toBe("REVIEW_VERIFY");
-      expect(result.verifyComplete).toBe(true);
-    });
-
-    test("transitions from REVIEW_VERIFY to COMPLETE", () => {
-      const state = createInitialState("/test/vault");
-      state.currentPhase = "REVIEW_VERIFY";
-
-      const result = transitionState(state, "continue", true);
       expect(result.currentPhase).toBe("COMPLETE");
+      expect(result.verifyComplete).toBe(true);
     });
 
     test("stays at COMPLETE when already complete", () => {
@@ -158,15 +117,10 @@ describe("interactive-agent state transitions", () => {
       const expectedOrder: AgentPhase[] = [
         "WELCOME",
         "AUDIT",
-        "REVIEW_AUDIT",
         "PLAN",
-        "REVIEW_PLAN",
         "GENERATE_WORKLIST",
-        "REVIEW_WORKLIST",
         "EXECUTE",
-        "REVIEW_EXECUTE",
         "VERIFY",
-        "REVIEW_VERIFY",
         "COMPLETE",
       ];
 

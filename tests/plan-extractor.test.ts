@@ -396,6 +396,86 @@ No mapping table here.
     expect(result.stats.mapActions).toBe(2);
     expect(result.stats.keepActions).toBe(1);
   });
+
+  test("handles FIX FORMAT action (underscore to kebab-case)", () => {
+    const markdown = `
+| Current Tag | New Tag | Action | Frequency | Reasoning |
+|-------------|---------|--------|-----------|-----------|
+| \`ai_tools\` | \`ai-tools\` | Fix Format | 1 | Fix underscore to match existing |
+| \`technical_writing\` | \`technical-writing\` | Fix Format | 1 | Fix underscore |
+| \`weekly_summary\` | \`type/summary\` | Map | 2 | Note classification + fix underscore |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["ai_tools"]).toBe("ai-tools");
+    expect(result.mappings["technical_writing"]).toBe("technical-writing");
+    expect(result.mappings["weekly_summary"]).toBe("type/summary");
+    expect(result.stats.fixActions).toBe(2);
+    expect(result.stats.mapActions).toBe(1);
+  });
+
+  test("handles FIX CASE action (normalize casing)", () => {
+    const markdown = `
+| Current Tag | New Tag | Action | Frequency | Reasoning |
+|-------------|---------|--------|-----------|-----------|
+| \`AI-Tools\` | \`ai-tools\` | Fix Case | 1 | Fix case to match existing |
+| \`Blockchain\` | \`blockchain\` | Fix Case | 1 | Normalize to lowercase |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["ai-tools"]).toBe("ai-tools");
+    expect(result.mappings["blockchain"]).toBe("blockchain");
+    expect(result.stats.fixActions).toBe(2);
+  });
+
+  test("handles FIX CASE + MAP action (combined)", () => {
+    const markdown = `
+| Current Tag | New Tag | Action | Frequency | Reasoning |
+|-------------|---------|--------|-----------|-----------|
+| \`Career\` | \`area/career\` | Fix Case + Map | 1 | Fix case + promote to area |
+| \`Research\` | \`type/research\` | Fix Case + Map | 1 | Fix case + note classification |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["career"]).toBe("area/career");
+    expect(result.mappings["research"]).toBe("type/research");
+    expect(result.stats.fixActions).toBe(2);
+  });
+
+  test("handles mixed MAP, FIX, KEEP, REMOVE actions", () => {
+    const markdown = `
+| Current Tag | New Tag | Action | Frequency | Reasoning |
+|-------------|---------|--------|-----------|-----------|
+| \`career\` | \`area/career\` | Map | 13 | Life domain |
+| \`ai_tools\` | \`ai-tools\` | Fix Format | 1 | Fix underscore |
+| \`AI-Tools\` | \`ai-tools\` | Fix Case | 1 | Fix case |
+| \`blockchain\` | \`blockchain\` | Keep | 10 | Perfect topic tag |
+| \`heading\` | — | Remove | 6 | Noise |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.stats.mapActions).toBe(1);
+    expect(result.stats.fixActions).toBe(2);
+    expect(result.stats.keepActions).toBe(1);
+    expect(result.stats.removeActions).toBe(1);
+    expect(result.stats.totalMappings).toBe(5);
+  });
+
+  test("warns when FIX action has no new tag", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`broken\` | ? | Fix Format | Missing target |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings[0]).toContain("broken");
+  });
 });
 
 describe("extractMappingsFromPlanFile", () => {

@@ -283,9 +283,6 @@ export function buildInteractiveSystemPrompt(phase: AgentPhase, config: Config):
     case "PLAN":
       phaseInstructions = buildPlanInstructions(config);
       break;
-    case "REVIEW_WORKLIST":
-      phaseInstructions = buildScopeSelectionInstructions(config);
-      break;
     case "EXECUTE":
       phaseInstructions = buildExecuteInstructions(config);
       break;
@@ -293,7 +290,7 @@ export function buildInteractiveSystemPrompt(phase: AgentPhase, config: Config):
       phaseInstructions = buildVerifyInstructions(config);
       break;
     default:
-      // For non-LLM phases (WELCOME, REVIEW_AUDIT, REVIEW_PLAN, GENERATE_WORKLIST, REVIEW_EXECUTE, REVIEW_VERIFY, COMPLETE), no instructions needed
+      // For non-LLM phases (WELCOME, GENERATE_WORKLIST, COMPLETE), no instructions needed
       phaseInstructions = "";
   }
 
@@ -321,28 +318,22 @@ export function buildPhaseTransitionPrompt(
   toPhase: AgentPhase,
   context?: { batchNumber?: number; totalBatches?: number; notesRemaining?: number }
 ): string {
-  // Welcome transitions
+  // Welcome → Audit
   if (fromPhase === "WELCOME" && toPhase === "AUDIT") {
     return `Let's start by auditing your vault to understand its current tagging state.
 
 I'll scan every note, catalog all tags, and identify which ones need attention.`;
   }
 
-  // After audit
-  if (fromPhase === "AUDIT" && toPhase === "REVIEW_AUDIT") {
+  // Audit → Plan
+  if (fromPhase === "AUDIT" && toPhase === "PLAN") {
     return `The audit is complete! I've written a report to your vault.
 
 Take a moment to review \`_Tag Audit Report.md\` in Obsidian. It shows all the tags I found, their frequencies, and my initial classification.`;
   }
 
-  if (fromPhase === "REVIEW_AUDIT" && toPhase === "PLAN") {
-    return `Now I'll create a migration plan based on the audit results.
-
-I'll map each existing tag to its new form (or mark it for removal), and identify any tags that need your input.`;
-  }
-
-  // After plan
-  if (fromPhase === "PLAN" && toPhase === "REVIEW_PLAN") {
+  // Plan → Generate Worklist
+  if (fromPhase === "PLAN" && toPhase === "GENERATE_WORKLIST") {
     return `The migration plan is ready! Check \`_Tag Migration Plan.md\` in your vault.
 
 Review the tag mapping table carefully:
@@ -354,27 +345,20 @@ Review the tag mapping table carefully:
 If you see any UNMAPPED tags, decide what to do with them before we proceed.`;
   }
 
-  if (fromPhase === "REVIEW_PLAN" && toPhase === "GENERATE_WORKLIST") {
-    return `Now I'll generate the detailed worklist from your plan.
-
-This is a quick code operation (no AI involved) — it reads every note and builds a precise list of changes to make.`;
-  }
-
-  // After worklist
-  if (fromPhase === "GENERATE_WORKLIST" && toPhase === "REVIEW_WORKLIST") {
+  // Generate Worklist → Execute
+  if (fromPhase === "GENERATE_WORKLIST" && toPhase === "EXECUTE") {
     return `The worklist is ready! You can see a summary in \`_Tag Migration Plan.md\`.
 
-This shows exactly which notes will be changed and how. The detailed data is in \`data/migration-worklist.json\`.`;
+This shows exactly which notes will be changed and how. Time to apply the changes in safe, reversible batches.`;
   }
 
-  if (fromPhase === "REVIEW_WORKLIST" && toPhase === "EXECUTE") {
-    return `Time to apply the changes! I'll process notes in batches with git commits for safety.
-
-Each batch is wrapped in commits, so you can easily revert if anything looks wrong.`;
+  // Execute → Execute (continuing batches)
+  if (fromPhase === "EXECUTE" && toPhase === "EXECUTE") {
+    return `Continuing with the next batch...`;
   }
 
-  // Execute progress
-  if (fromPhase === "EXECUTE" && toPhase === "REVIEW_EXECUTE") {
+  // Execute → Verify
+  if (fromPhase === "EXECUTE" && toPhase === "VERIFY") {
     const remaining = context?.notesRemaining ?? 0;
     if (remaining > 0) {
       return `Batch complete! ${remaining} notes still need processing.
@@ -386,26 +370,11 @@ Check \`git log\` in your vault to see the changes. Ready for the next batch whe
 The tag migration is complete. Let's verify the results.`;
   }
 
-  if (fromPhase === "REVIEW_EXECUTE" && toPhase === "EXECUTE") {
-    return `Continuing with the next batch...`;
-  }
-
-  if (fromPhase === "REVIEW_EXECUTE" && toPhase === "VERIFY") {
-    return `Now let's verify that everything migrated correctly.
-
-I'll scan the entire vault and check for any remaining issues.`;
-  }
-
-  // After verify
-  if (fromPhase === "VERIFY" && toPhase === "REVIEW_VERIFY") {
+  // Verify → Complete
+  if (fromPhase === "VERIFY" && toPhase === "COMPLETE") {
     return `Verification complete! Check \`_Tag Migration Verification.md\` for the full report.
 
-This shows your compliance percentage and any issues found.`;
-  }
-
-  if (fromPhase === "REVIEW_VERIFY" && toPhase === "COMPLETE") {
-    return `Congratulations! Your vault's tagging migration is complete.
-
+Congratulations! Your vault's tagging migration is complete.
 You now have a clean, hierarchical tagging system with all tags in YAML frontmatter. Enjoy your organized vault!`;
   }
 

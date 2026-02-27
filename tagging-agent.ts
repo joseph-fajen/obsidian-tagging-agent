@@ -721,6 +721,18 @@ export async function checkPlanPrerequisites(dataPath: string, vaultPath: string
     : 0;
   console.log(`Found audit data: ${tagCount} unique tags, ${mappingCount} audit-discovered mappings.\n`);
 
+  // Validate tag count consistency (warn if header doesn't match actual data)
+  if (typeof auditData.uniqueTags === "number" && auditData.tagFrequencies) {
+    const headerCount = auditData.uniqueTags;
+    const actualCount = Object.keys(auditData.tagFrequencies as object).length;
+    if (headerCount !== actualCount) {
+      console.log(`⚠️  Tag count mismatch in audit-data.json:`);
+      console.log(`   Header says: ${headerCount} unique tags`);
+      console.log(`   Actual data: ${actualCount} tags in tagFrequencies`);
+      console.log(`   Using actual count (${actualCount}) for plan phase.\n`);
+    }
+  }
+
   return true;
 }
 
@@ -799,6 +811,9 @@ async function runAgent(config: Config) {
     if (extraction && extraction.success) {
       console.log(`  Found ${extraction.stats.totalMappings} mappings:`);
       console.log(`    MAP: ${extraction.stats.mapActions}`);
+      if (extraction.stats.fixActions > 0) {
+        console.log(`    FIX: ${extraction.stats.fixActions} (format/case corrections)`);
+      }
       console.log(`    REMOVE: ${extraction.stats.removeActions}`);
       console.log(`    KEEP: ${extraction.stats.keepActions}`);
       if (extraction.stats.unmappedActions > 0) {

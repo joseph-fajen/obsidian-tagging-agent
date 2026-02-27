@@ -13,6 +13,7 @@ export interface PlanExtractionResult {
     removeActions: number;
     keepActions: number;
     unmappedActions: number;
+    fixActions: number;
   };
   warnings: string[];
 }
@@ -28,17 +29,18 @@ export interface PlanExtractionResult {
  * - New tag can be: `tag`, bare-tag, (remove), —, -, or ?
  * - Action can be bold: **MAP**, **KEEP**, etc.
  * - Action column may have extra text after action word (e.g., "**MAP** to `type/reference`")
+ * - Action can be "Fix Format", "Fix Case", "Fix Case + Map" — treated as MAP
  *
  * Captures:
  * - Group 1: old tag (without backticks)
  * - Group 2: new tag (backtick-enclosed), or undefined
  * - Group 3: new tag (bare, no backticks), or undefined
- * - Group 4: action (MAP, REMOVE, KEEP, UNMAPPED)
+ * - Group 4: action (MAP, REMOVE, KEEP, UNMAPPED, or FIX for format/case fixes)
  *
  * Note: Either group 2 or group 3 will capture the new tag, depending on whether
  * the LLM used backticks. Code must check both: `newTag = match[2] || match[3]`
  */
-const TABLE_ROW_REGEX = /^\|\s*`?([^`|\n]+?)`?\s*\|\s*(?:`([^`|\n]+?)`|([a-z][a-z0-9/_-]*)|—|-|\(remove\)|\?|)\s*\|\s*\*?\*?(MAP|REMOVE|KEEP|UNMAPPED)\*?\*?[^|]*\|/gim;
+const TABLE_ROW_REGEX = /^\|\s*`?([^`|\n]+?)`?\s*\|\s*(?:`([^`|\n]+?)`|([a-z][a-z0-9/_-]*)|—|-|\(remove\)|\?|)\s*\|\s*\*?\*?(MAP|REMOVE|KEEP|UNMAPPED|FIX)\*?\*?[^|]*\|/gim;
 
 /**
  * Extract tag mappings from a plan markdown string.
@@ -51,6 +53,7 @@ export function extractMappingsFromMarkdown(markdown: string): PlanExtractionRes
   let removeActions = 0;
   let keepActions = 0;
   let unmappedActions = 0;
+  let fixActions = 0;
 
   // Reset regex state
   TABLE_ROW_REGEX.lastIndex = 0;
@@ -72,6 +75,15 @@ export function extractMappingsFromMarkdown(markdown: string): PlanExtractionRes
           mapActions++;
         } else {
           warnings.push(`MAP action for "${oldTag}" has no new tag`);
+        }
+        break;
+      case "FIX":
+        // "Fix Format", "Fix Case", "Fix Case + Map" — all treated as MAP
+        if (newTag) {
+          newValue = newTag.toLowerCase().trim();
+          fixActions++;
+        } else {
+          warnings.push(`FIX action for "${oldTag}" has no new tag`);
         }
         break;
       case "REMOVE":
@@ -115,6 +127,7 @@ export function extractMappingsFromMarkdown(markdown: string): PlanExtractionRes
       removeActions,
       keepActions,
       unmappedActions,
+      fixActions,
     },
     warnings,
   };

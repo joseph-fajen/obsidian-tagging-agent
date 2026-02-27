@@ -53,25 +53,41 @@ export interface AuditMappings {
 
 /**
  * Look up a tag in the mapping table.
- * Priority: noise patterns → loaded mappings (plan + audit) → hardcoded → valid format check → unmapped.
+ * Priority: noise patterns → exact match in mappings → normalized match → hardcoded → valid format check → unmapped.
+ *
+ * Note: We check the ORIGINAL tag (lowercase only) in mappings before normalizing underscores.
+ * This ensures that ai_tools→ai-tools is returned as "map" (format change) rather than
+ * being normalized first and finding ai-tools→ai-tools (identity/keep).
  */
 export function lookupTagMapping(
   tag: string,
   loadedMappings?: AuditMappings,
 ): { action: "map" | "remove" | "keep" | "unmapped"; newTag: string | null } {
-  const normalized = tag.toLowerCase().replace(/_/g, "-");
+  const lowercased = tag.toLowerCase();
+  const normalized = lowercased.replace(/_/g, "-");
 
-  // Check noise patterns first
+  // Check noise patterns first (using normalized form)
   if (isNoiseTag(normalized)) {
     return { action: "remove", newTag: null };
   }
 
-  // Check loaded mappings (from plan-mappings.json or audit-data.json)
-  if (loadedMappings && normalized in loadedMappings.mappings) {
-    const newTag = loadedMappings.mappings[normalized];
-    if (newTag === null) return { action: "remove", newTag: null };
-    if (newTag === normalized) return { action: "keep", newTag };
-    return { action: "map", newTag };
+  // Check loaded mappings: try ORIGINAL (lowercase) first, then normalized
+  // This ensures format-fix mappings like ai_tools→ai-tools are found
+  if (loadedMappings) {
+    // First: try exact match with lowercase original
+    if (lowercased in loadedMappings.mappings) {
+      const newTag = loadedMappings.mappings[lowercased];
+      if (newTag === null) return { action: "remove", newTag: null };
+      if (newTag === lowercased) return { action: "keep", newTag };
+      return { action: "map", newTag };
+    }
+    // Second: try normalized form (underscores→hyphens)
+    if (normalized in loadedMappings.mappings) {
+      const newTag = loadedMappings.mappings[normalized];
+      if (newTag === null) return { action: "remove", newTag: null };
+      if (newTag === normalized) return { action: "keep", newTag };
+      return { action: "map", newTag };
+    }
   }
 
   // Check hardcoded universal mappings (noise patterns only)

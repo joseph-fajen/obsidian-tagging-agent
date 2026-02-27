@@ -203,12 +203,6 @@ describe("buildInteractiveSystemPrompt", () => {
     expect(prompt).not.toContain("## Current Phase:");
   });
 
-  test("returns only personality for REVIEW phases", () => {
-    const prompt = buildInteractiveSystemPrompt("REVIEW_AUDIT", mockConfig);
-    expect(prompt.toLowerCase()).toContain("vault");
-    expect(prompt).not.toContain("## Current Phase:");
-  });
-
   test("returns only personality for COMPLETE phase", () => {
     const prompt = buildInteractiveSystemPrompt("COMPLETE", mockConfig);
     expect(prompt.toLowerCase()).toContain("vault");
@@ -223,33 +217,33 @@ describe("buildPhaseTransitionPrompt", () => {
     expect(message.toLowerCase()).toContain("scan");
   });
 
-  test("returns appropriate message for AUDIT to REVIEW_AUDIT", () => {
-    const message = buildPhaseTransitionPrompt("AUDIT", "REVIEW_AUDIT");
+  test("returns appropriate message for AUDIT to PLAN", () => {
+    const message = buildPhaseTransitionPrompt("AUDIT", "PLAN");
     expect(message.toLowerCase()).toContain("complete");
     expect(message).toContain("_Tag Audit Report.md");
   });
 
-  test("returns appropriate message for PLAN to REVIEW_PLAN", () => {
-    const message = buildPhaseTransitionPrompt("PLAN", "REVIEW_PLAN");
+  test("returns appropriate message for PLAN to GENERATE_WORKLIST", () => {
+    const message = buildPhaseTransitionPrompt("PLAN", "GENERATE_WORKLIST");
     expect(message).toContain("_Tag Migration Plan.md");
   });
 
-  test("includes batch info for EXECUTE to REVIEW_EXECUTE when notes remaining", () => {
-    const message = buildPhaseTransitionPrompt("EXECUTE", "REVIEW_EXECUTE", {
+  test("includes batch info for EXECUTE to VERIFY when notes remaining", () => {
+    const message = buildPhaseTransitionPrompt("EXECUTE", "VERIFY", {
       notesRemaining: 100,
     });
     expect(message).toContain("100");
   });
 
   test("returns completion message when no notes remaining", () => {
-    const message = buildPhaseTransitionPrompt("EXECUTE", "REVIEW_EXECUTE", {
+    const message = buildPhaseTransitionPrompt("EXECUTE", "VERIFY", {
       notesRemaining: 0,
     });
     expect(message.toLowerCase()).toContain("complete");
   });
 
-  test("returns congratulations for REVIEW_VERIFY to COMPLETE", () => {
-    const message = buildPhaseTransitionPrompt("REVIEW_VERIFY", "COMPLETE");
+  test("returns congratulations for VERIFY to COMPLETE", () => {
+    const message = buildPhaseTransitionPrompt("VERIFY", "COMPLETE");
     expect(message.toLowerCase()).toContain("congratulations");
   });
 
