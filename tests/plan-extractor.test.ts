@@ -301,6 +301,101 @@ No mapping table here.
     expect(result.stats.mapActions).toBe(2);
     expect(result.stats.removeActions).toBe(2);
   });
+
+  test("handles tags WITHOUT backticks (bare tags)", () => {
+    // This is a critical test case - some LLMs write tables without backticks
+    const markdown = `
+| Current Tag | New Tag | Action | Frequency | Rationale |
+|-------------|---------|---------|-----------|-----------|
+| career | area/career | MAP | 12 | Promote to life domain |
+| health | area/health | MAP | 6 | Promote to life domain |
+| todo | status/pending | MAP | 10 | Standardize workflow state |
+| ai-tools | ai-tools | KEEP | 14 | Already valid topic tag |
+| blockchain | blockchain | KEEP | 11 | Already valid topic tag |
+| heading | — | REMOVE | 8 | Google Docs import artifact |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.stats.totalMappings).toBe(6);
+    expect(result.mappings["career"]).toBe("area/career");
+    expect(result.mappings["health"]).toBe("area/health");
+    expect(result.mappings["todo"]).toBe("status/pending");
+    expect(result.mappings["ai-tools"]).toBe("ai-tools");
+    expect(result.mappings["blockchain"]).toBe("blockchain");
+    expect(result.mappings["heading"]).toBeNull();
+    expect(result.stats.mapActions).toBe(3);
+    expect(result.stats.keepActions).toBe(2);
+    expect(result.stats.removeActions).toBe(1);
+  });
+
+  test("handles bare tags with section headers in table", () => {
+    // Test the exact format from the failed migration - LLM added section headers as rows
+    const markdown = `
+| Current Tag | New Tag | Action | Frequency | Rationale |
+|-------------|---------|---------|-----------|-----------|
+| **HIERARCHICAL PROMOTIONS** |
+| career | area/career | MAP | 12 | Promote to life domain |
+| research | type/research | MAP | 7 | Classify as note type |
+| **STATUS STANDARDIZATION** |
+| todo | status/pending | MAP | 10 | Standardize workflow state |
+| wip | status/in-progress | MAP | 3 | Standardize workflow state |
+| **NOISE REMOVAL** |
+| heading | — | REMOVE | 8 | Google Docs import artifact |
+| **TOPIC TAGS (KEEP AS-IS)** |
+| ai-tools | ai-tools | KEEP | 14 | Already valid topic tag |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["career"]).toBe("area/career");
+    expect(result.mappings["research"]).toBe("type/research");
+    expect(result.mappings["todo"]).toBe("status/pending");
+    expect(result.mappings["wip"]).toBe("status/in-progress");
+    expect(result.mappings["heading"]).toBeNull();
+    expect(result.mappings["ai-tools"]).toBe("ai-tools");
+    expect(result.stats.mapActions).toBe(4);
+    expect(result.stats.keepActions).toBe(1);
+    expect(result.stats.removeActions).toBe(1);
+  });
+
+  test("handles mixed backtick and bare tag formats", () => {
+    // Test when LLM mixes formats in the same table
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| \`with-backticks\` | \`type/backticked\` | MAP | With backticks |
+| bare-tag | type/bare | MAP | No backticks |
+| \`mixed\` | area/destination | MAP | Backtick old, bare new |
+| source | \`area/quoted\` | MAP | Bare old, backtick new |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["with-backticks"]).toBe("type/backticked");
+    expect(result.mappings["bare-tag"]).toBe("type/bare");
+    expect(result.mappings["mixed"]).toBe("area/destination");
+    expect(result.mappings["source"]).toBe("area/quoted");
+    expect(result.stats.mapActions).toBe(4);
+  });
+
+  test("handles bare tags with hierarchical paths (slashes)", () => {
+    const markdown = `
+| Old Tag | New Tag | Action | Notes |
+|---------|---------|--------|-------|
+| project-catalyst | project/catalyst | MAP | Add project prefix |
+| daily-notes | type/daily-note | MAP | Add type prefix |
+| status/in-progress | status/in-progress | KEEP | Already correct |
+`;
+    const result = extractMappingsFromMarkdown(markdown);
+
+    expect(result.success).toBe(true);
+    expect(result.mappings["project-catalyst"]).toBe("project/catalyst");
+    expect(result.mappings["daily-notes"]).toBe("type/daily-note");
+    expect(result.mappings["status/in-progress"]).toBe("status/in-progress");
+    expect(result.stats.mapActions).toBe(2);
+    expect(result.stats.keepActions).toBe(1);
+  });
 });
 
 describe("extractMappingsFromPlanFile", () => {

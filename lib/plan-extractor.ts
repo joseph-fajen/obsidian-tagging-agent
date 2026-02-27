@@ -22,19 +22,23 @@ export interface PlanExtractionResult {
  * Expected format: | `old-tag` | `new-tag` or (remove) or — or ? | ACTION | notes |
  *
  * Handles variations:
- * - Backticks optional (some LLMs might omit them)
+ * - Backticks optional around BOTH old and new tags
  * - Whitespace flexible (tight or spaced formatting)
  * - Action case-insensitive
- * - New tag can be: `tag`, (remove), —, -, or ?
+ * - New tag can be: `tag`, bare-tag, (remove), —, -, or ?
  * - Action can be bold: **MAP**, **KEEP**, etc.
  * - Action column may have extra text after action word (e.g., "**MAP** to `type/reference`")
  *
  * Captures:
  * - Group 1: old tag (without backticks)
- * - Group 2: new tag (without backticks), or undefined for removal indicators
- * - Group 3: action (MAP, REMOVE, KEEP, UNMAPPED)
+ * - Group 2: new tag (backtick-enclosed), or undefined
+ * - Group 3: new tag (bare, no backticks), or undefined
+ * - Group 4: action (MAP, REMOVE, KEEP, UNMAPPED)
+ *
+ * Note: Either group 2 or group 3 will capture the new tag, depending on whether
+ * the LLM used backticks. Code must check both: `newTag = match[2] || match[3]`
  */
-const TABLE_ROW_REGEX = /^\|\s*`?([^`|\n]+?)`?\s*\|\s*(?:`([^`|\n]+?)`|—|-|\(remove\)|\?|)\s*\|\s*\*?\*?(MAP|REMOVE|KEEP|UNMAPPED)\*?\*?[^|]*\|/gim;
+const TABLE_ROW_REGEX = /^\|\s*`?([^`|\n]+?)`?\s*\|\s*(?:`([^`|\n]+?)`|([a-z][a-z0-9/_-]*)|—|-|\(remove\)|\?|)\s*\|\s*\*?\*?(MAP|REMOVE|KEEP|UNMAPPED)\*?\*?[^|]*\|/gim;
 
 /**
  * Extract tag mappings from a plan markdown string.
@@ -53,7 +57,8 @@ export function extractMappingsFromMarkdown(markdown: string): PlanExtractionRes
 
   let match;
   while ((match = TABLE_ROW_REGEX.exec(markdown)) !== null) {
-    const [, oldTag, newTag, action] = match;
+    const [, oldTag, backtickedNewTag, bareNewTag, action] = match;
+    const newTag = backtickedNewTag || bareNewTag; // Either group may capture the new tag
     const normalizedOld = oldTag.toLowerCase().trim();
     const upperAction = action.toUpperCase();
 
