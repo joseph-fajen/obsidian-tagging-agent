@@ -2,18 +2,25 @@
 
 This file tracks the current development state for Claude Code context. It's the single source of truth for what's been implemented, what's pending, and known issues.
 
-**Last Updated:** 2026-03-02
+**Last Updated:** 2026-03-03
 
 ---
 
 ## Current Phase
 
-**Status:** Production-ready — Deterministic audit and verify phases
+**Status:** Production-ready — Deterministic audit and verify phases with improvement suggestions
 
 The agent architecture has been refined for maximum reliability and minimal cost:
 - **Deterministic audit and verify:** Both phases now use code-only implementation (no LLM)
 - **LLM only where it adds value:** Only Plan phase uses LLM (interpreting user's scheme note)
 - **Total migration cost: ~$0.25** — down from ~$1.50 with LLM audit/verify
+- **Verify phase suggestions:** Reports potential improvements (flat tags that could be hierarchical)
+
+**Key Changes (2026-03-03):**
+- `lib/verify-generator.ts` — Added "Potential Improvements" suggestions for flat tags that could benefit from hierarchical prefixes (status/, area/, project/, type/, tool/)
+- CLI and interactive mode now show suggestions count and examples
+- Markdown report includes grouped suggestions table with disclaimer
+- 383 tests (up from 367)
 
 **Key Changes (2026-03-02):**
 - `lib/verify-generator.ts` — New deterministic verification (no LLM)
@@ -81,7 +88,7 @@ The agent architecture has been refined for maximum reliability and minimal cost
 
 ### Tests ✅
 
-- 367+ tests passing across 22+ test files
+- 383 tests passing across 22 test files
 - `bun test` runs successfully
 
 ---

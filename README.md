@@ -189,9 +189,13 @@ bun run tagging-agent.ts verify
 ```
 
 **Outputs:**
-- `_Tag Migration Verification.md` — Compliance report with any violations listed
+- `_Tag Migration Verification.md` — Compliance report with violations and improvement suggestions
 
-**Review:** Check the compliance percentage. Any violations are listed with specific notes and issues to fix.
+**Review:** Check the compliance percentage. The report includes:
+- **Violations** — Format issues that need fixing (inline tags, duplicates, invalid formats)
+- **Potential Improvements** — Valid tags that could benefit from hierarchical prefixes (e.g., `active` → `status/active`, `career` → `area/career`)
+
+The suggestions are informational — they won't fail verification, but highlight opportunities for better organization.
 
 This step is instant and free (no API calls).
 
@@ -263,7 +267,7 @@ tools/
   tag-tools.ts            # apply_tag_changes, preview_changes, execute_batch, get_progress
   git-tools.ts            # git_commit
   data-tools.ts           # read_data_file, write_data_file
-tests/                    # bun test files (290 tests)
+tests/                    # bun test files (383 tests)
 scripts/
   generate-complex-vault.ts  # Generate test-vault-complex for testing
 data/                     # Runtime data (git-ignored, see below)

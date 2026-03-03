@@ -62,7 +62,113 @@ function checkTagFormatIssues(tag: string): string[] {
   return issues;
 }
 
+// === Suggestion patterns ===
+
+/**
+ * Patterns for detecting flat tags that could benefit from hierarchical prefixes.
+ * These are suggestions, not violations — the tags are valid but could be improved.
+ */
+const SUGGESTION_PATTERNS = {
+  /** Tags that look like status indicators → status/* */
+  status: [
+    "active", "inactive", "done", "finished", "completed", "pending",
+    "archived", "in-progress", "wip", "todo", "blocked", "on-hold",
+    "paused", "cancelled", "draft", "review", "approved", "rejected",
+  ],
+  /** Tags that look like projects → project/* */
+  projectPrefixes: ["project-"],
+  /** Tags that look like life areas → area/* */
+  area: [
+    "career", "health", "learning", "finance", "relationships",
+    "personal", "work", "family", "home", "spirituality", "fitness",
+    "education", "hobbies", "travel",
+  ],
+  /** Tags that look like note types → type/* */
+  type: [
+    "meeting", "daily-note", "research", "documentation", "note",
+    "summary", "weekly-summary", "monthly-review", "journal",
+    "brainstorm", "outline", "template", "reference", "tutorial",
+  ],
+  /** Tags that look like tools → tool/* */
+  tool: [
+    "obsidian", "notion", "cursor", "vscode", "figma", "slack",
+    "github", "jira", "confluence", "excel", "word", "chrome",
+  ],
+};
+
+/**
+ * Check if a flat tag could benefit from a hierarchical prefix.
+ * Returns the suggested hierarchical tag, or null if no suggestion.
+ */
+function getSuggestion(tag: string): { suggestedTag: string; reason: string } | null {
+  const normalized = tag.toLowerCase().replace(/_/g, "-");
+
+  // Skip if already has a valid prefix
+  if (normalized.includes("/")) {
+    return null;
+  }
+
+  // Check status patterns
+  if (SUGGESTION_PATTERNS.status.includes(normalized)) {
+    return {
+      suggestedTag: `status/${normalized}`,
+      reason: "looks like a status indicator",
+    };
+  }
+
+  // Check project- prefix pattern
+  for (const prefix of SUGGESTION_PATTERNS.projectPrefixes) {
+    if (normalized.startsWith(prefix)) {
+      const projectName = normalized.slice(prefix.length);
+      return {
+        suggestedTag: `project/${projectName}`,
+        reason: "looks like a project name",
+      };
+    }
+  }
+
+  // Check area patterns
+  if (SUGGESTION_PATTERNS.area.includes(normalized)) {
+    return {
+      suggestedTag: `area/${normalized}`,
+      reason: "looks like a life area",
+    };
+  }
+
+  // Check type patterns
+  if (SUGGESTION_PATTERNS.type.includes(normalized)) {
+    return {
+      suggestedTag: `type/${normalized}`,
+      reason: "looks like a note type",
+    };
+  }
+
+  // Check tool patterns
+  if (SUGGESTION_PATTERNS.tool.includes(normalized)) {
+    return {
+      suggestedTag: `tool/${normalized}`,
+      reason: "looks like a tool name",
+    };
+  }
+
+  return null;
+}
+
 // === Verification data types ===
+
+/**
+ * A suggestion for improving a tag (not a violation).
+ */
+export interface TagSuggestion {
+  /** Relative path to the note */
+  path: string;
+  /** Current tag */
+  currentTag: string;
+  /** Suggested hierarchical tag */
+  suggestedTag: string;
+  /** Why this suggestion was made */
+  reason: string;
+}
 
 export interface NoteViolation {
   /** Relative path to the note from vault root */
@@ -104,6 +210,8 @@ export interface VerifyData {
     tagsByPrefix: Record<string, number>;
     flatTopicTags: number;
   };
+  /** Suggestions for improving flat tags (not violations) */
+  suggestions: TagSuggestion[];
 }
 
 export interface VerifyGeneratorResult {
@@ -119,6 +227,7 @@ export interface VerifyGeneratorResult {
     formatViolations: number;
     duplicateViolations: number;
     noiseTagViolations: number;
+    suggestionsCount: number;
   };
 }
 
@@ -170,6 +279,7 @@ export async function generateVerify(
 ): Promise<VerifyGeneratorResult> {
   const warnings: string[] = [];
   const violations: NoteViolation[] = [];
+  const suggestions: TagSuggestion[] = [];
   const tagSet = new Set<string>();
   const tagsByPrefix: Record<string, number> = {};
   let flatTopicCount = 0;
@@ -270,6 +380,17 @@ export async function generateVerify(
         tagsByPrefix[prefix] = (tagsByPrefix[prefix] || 0) + 1;
       } else if (!isNoiseTag(normalized)) {
         flatTopicCount++;
+
+        // Check if this flat tag could benefit from a hierarchical prefix
+        const suggestion = getSuggestion(normalized);
+        if (suggestion) {
+          suggestions.push({
+            path: notePath,
+            currentTag: normalized,
+            suggestedTag: suggestion.suggestedTag,
+            reason: suggestion.reason,
+          });
+        }
       }
     }
 
@@ -345,6 +466,7 @@ export async function generateVerify(
       tagsByPrefix,
       flatTopicTags: flatTopicCount,
     },
+    suggestions,
   };
 
   return {
@@ -360,6 +482,7 @@ export async function generateVerify(
       formatViolations,
       duplicateViolations,
       noiseTagViolations,
+      suggestionsCount: suggestions.length,
     },
   };
 }
@@ -486,6 +609,54 @@ export function formatVerifyMarkdown(result: VerifyGeneratorResult): string {
   sections.push(`- **Generated by:** deterministic code (not LLM)`);
   sections.push(`- **Generated at:** ${data.generatedAt}`);
   sections.push(``);
+
+  // Suggestions (potential improvements, not violations)
+  if (data.suggestions && data.suggestions.length > 0) {
+    sections.push(`## Potential Improvements`);
+    sections.push(``);
+    sections.push(`The following tags are valid but could benefit from hierarchical prefixes for better organization:`);
+    sections.push(``);
+
+    // Group suggestions by suggested prefix for cleaner display
+    const byPrefix = new Map<string, typeof data.suggestions>();
+    for (const suggestion of data.suggestions) {
+      const prefix = suggestion.suggestedTag.split("/")[0];
+      if (!byPrefix.has(prefix)) {
+        byPrefix.set(prefix, []);
+      }
+      byPrefix.get(prefix)!.push(suggestion);
+    }
+
+    // Sort prefixes for consistent output
+    const sortedPrefixes = Array.from(byPrefix.keys()).sort();
+
+    for (const prefix of sortedPrefixes) {
+      const prefixSuggestions = byPrefix.get(prefix)!;
+      sections.push(`### ${prefix}/ suggestions`);
+      sections.push(``);
+      sections.push(`| File | Current Tag | Suggested Tag |`);
+      sections.push(`|------|-------------|---------------|`);
+
+      // Dedupe by file+tag combination and limit to 20 per prefix
+      const seen = new Set<string>();
+      let count = 0;
+      for (const s of prefixSuggestions) {
+        const key = `${s.path}:${s.currentTag}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (count >= 20) {
+          sections.push(`| ... | *${prefixSuggestions.length - 20} more* | |`);
+          break;
+        }
+        sections.push(`| \`${s.path}\` | \`${s.currentTag}\` | \`${s.suggestedTag}\` |`);
+        count++;
+      }
+      sections.push(``);
+    }
+
+    sections.push(`> **Note:** These are suggestions, not violations. The current tags are valid — these are opportunities for improved organization if you want them.`);
+    sections.push(``);
+  }
 
   // Next Steps
   if (data.notesWithViolations > 0) {

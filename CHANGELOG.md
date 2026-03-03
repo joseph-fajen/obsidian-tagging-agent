@@ -4,6 +4,95 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-03-03: Add Potential Improvements Suggestions to Verify Phase
+
+### Session Context
+
+After running a full migration test on `test-vault-complex`, the verify phase reported 100% compliance. However, investigation revealed 6 tags that were technically valid (kebab-case format) but could benefit from hierarchical prefixes:
+
+- `active` → should be `status/active`
+- `done`, `finished` → should be `status/completed`
+- `catalyst`, `project-phoenix` → should be `project/catalyst`, `project/phoenix`
+- `spirituality` → should be `area/spirituality`
+
+These weren't violations (the format was valid), but they represented missed opportunities for better organization.
+
+### Problem Statement
+
+The verify phase only checked for **format violations** (uppercase, underscores, inline tags, duplicates, noise). It didn't detect **semantic improvements** — tags that are valid but could benefit from hierarchical prefixes.
+
+This created a gap: a migration could pass verification with 100% compliance while leaving flat tags that logically belong in hierarchical categories.
+
+### Solution Implemented
+
+Added a "Potential Improvements" feature to the verify phase that suggests hierarchical prefixes for flat tags matching known patterns:
+
+**Pattern detection:**
+- Status-like: `active`, `done`, `pending`, `completed`, `archived`, etc. → `status/*`
+- Project-like: `project-*` pattern → `project/*`
+- Area-like: `career`, `health`, `learning`, `finance`, etc. → `area/*`
+- Type-like: `meeting`, `research`, `documentation`, etc. → `type/*`
+- Tool-like: `obsidian`, `notion`, `cursor`, etc. → `tool/*`
+
+**Output enhancements:**
+- CLI shows suggestion count and examples
+- Markdown report includes "Potential Improvements" section grouped by prefix
+- Clear disclaimer that suggestions are not violations
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/verify-generator.ts` | Added `SUGGESTION_PATTERNS`, `getSuggestion()`, `TagSuggestion` interface; collect suggestions during scan; added suggestions section to markdown output |
+| `tagging-agent.ts` | Added CLI output for suggestions with examples |
+| `lib/interactive-agent.ts` | Added suggestions display to interactive mode verify output |
+| `tests/verify-generator.test.ts` | Added 6 test notes for suggestion scenarios; added 12 new tests for suggestion detection |
+
+### Example Output
+
+**CLI:**
+```
+✅ 100.0% compliance — all notes pass verification!
+
+💡 12 potential improvements detected
+   See "_Tag Migration Verification.md" for details
+
+   Examples:
+     spirituality → area/spirituality (Areas/Career-Goals.md)
+     active → status/active (Areas/Health-Tracker.md)
+     ...
+```
+
+**Markdown report includes:**
+```markdown
+## Potential Improvements
+
+The following tags are valid but could benefit from hierarchical prefixes...
+
+### status/ suggestions
+| File | Current Tag | Suggested Tag |
+|------|-------------|---------------|
+| `Areas/Health-Tracker.md` | `active` | `status/active` |
+
+> **Note:** These are suggestions, not violations.
+```
+
+### Testing
+
+- All 383 tests pass (up from 367)
+- 12 new tests for suggestion detection
+- Type check passes (pre-existing workshop errors only)
+
+### Key Insight
+
+Verification should distinguish between **compliance** (format correctness) and **completeness** (semantic organization). The suggestions feature bridges this gap by surfacing opportunities for improvement without failing the verification.
+
+### Commits
+
+- `<pending>` feat: add potential improvements suggestions to verify phase
+
+---
+
 ## 2026-03-02: Fix Inline Tag Removal and Deduplication Bugs
 
 ### Session Context

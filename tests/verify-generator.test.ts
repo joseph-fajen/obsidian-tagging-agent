@@ -174,6 +174,85 @@ Check this link: [docs](https://example.com/page#section)
 And another: https://docs.google.com/document#heading=h.abc123
 `,
   );
+
+  // Create suggestions folder
+  await mkdir(join(testVaultPath, "suggestions"), { recursive: true });
+
+  // Note 14: Status-like tags (should generate suggestions)
+  await writeFile(
+    join(testVaultPath, "suggestions", "status-tags.md"),
+    `---
+tags:
+  - active
+  - done
+  - pending
+---
+Note with status-like flat tags.
+`,
+  );
+
+  // Note 15: Project-like tags (should generate suggestions)
+  await writeFile(
+    join(testVaultPath, "suggestions", "project-tags.md"),
+    `---
+tags:
+  - project-phoenix
+  - project-catalyst
+---
+Note with project-like flat tags.
+`,
+  );
+
+  // Note 16: Area-like tags (should generate suggestions)
+  await writeFile(
+    join(testVaultPath, "suggestions", "area-tags.md"),
+    `---
+tags:
+  - career
+  - health
+  - learning
+---
+Note with area-like flat tags.
+`,
+  );
+
+  // Note 17: Type-like tags (should generate suggestions)
+  await writeFile(
+    join(testVaultPath, "suggestions", "type-tags.md"),
+    `---
+tags:
+  - meeting
+  - research
+  - documentation
+---
+Note with type-like flat tags.
+`,
+  );
+
+  // Note 18: Tool-like tags (should generate suggestions)
+  await writeFile(
+    join(testVaultPath, "suggestions", "tool-tags.md"),
+    `---
+tags:
+  - obsidian
+  - notion
+---
+Note with tool-like flat tags.
+`,
+  );
+
+  // Note 19: Already hierarchical (should NOT generate suggestions)
+  await writeFile(
+    join(testVaultPath, "suggestions", "hierarchical.md"),
+    `---
+tags:
+  - status/active
+  - project/phoenix
+  - area/career
+---
+Note with already-hierarchical tags.
+`,
+  );
 });
 
 afterAll(async () => {
@@ -257,9 +336,9 @@ describe("generateVerify", () => {
     expect(artifactViolation).toBeUndefined();
 
     // Total notes should not include the artifact
-    // We have 13 notes created, minus 1 artifact = 12 scanned
-    // But Templater file is skipped, so 11 actually verified
-    expect(result.stats.totalNotesScanned).toBeLessThanOrEqual(12);
+    // We have 19 notes created, minus 1 artifact = 18 scanned
+    // But Templater file is skipped, so 17 actually verified
+    expect(result.stats.totalNotesScanned).toBeLessThanOrEqual(18);
   });
 
   test("skips Templater files", async () => {
@@ -409,6 +488,140 @@ describe("formatVerifyMarkdown", () => {
     expect(md).toContain("100.0%");
 
     await rm(cleanVault, { recursive: true });
+  });
+});
+
+describe("suggestions", () => {
+  test("suggests status/ prefix for status-like tags", async () => {
+    const result = await generateVerify(testVaultPath);
+
+    const statusSuggestions = result.data.suggestions.filter(
+      (s) => s.suggestedTag.startsWith("status/"),
+    );
+
+    expect(statusSuggestions.length).toBeGreaterThanOrEqual(3);
+    expect(statusSuggestions.some((s) => s.currentTag === "active")).toBe(true);
+    expect(statusSuggestions.some((s) => s.currentTag === "done")).toBe(true);
+    expect(statusSuggestions.some((s) => s.currentTag === "pending")).toBe(true);
+  });
+
+  test("suggests project/ prefix for project-* pattern tags", async () => {
+    const result = await generateVerify(testVaultPath);
+
+    const projectSuggestions = result.data.suggestions.filter(
+      (s) => s.suggestedTag.startsWith("project/"),
+    );
+
+    expect(projectSuggestions.length).toBeGreaterThanOrEqual(2);
+    expect(projectSuggestions.some((s) => s.suggestedTag === "project/phoenix")).toBe(true);
+    expect(projectSuggestions.some((s) => s.suggestedTag === "project/catalyst")).toBe(true);
+  });
+
+  test("suggests area/ prefix for area-like tags", async () => {
+    const result = await generateVerify(testVaultPath);
+
+    const areaSuggestions = result.data.suggestions.filter(
+      (s) => s.suggestedTag.startsWith("area/"),
+    );
+
+    expect(areaSuggestions.length).toBeGreaterThanOrEqual(3);
+    expect(areaSuggestions.some((s) => s.currentTag === "career")).toBe(true);
+    expect(areaSuggestions.some((s) => s.currentTag === "health")).toBe(true);
+    expect(areaSuggestions.some((s) => s.currentTag === "learning")).toBe(true);
+  });
+
+  test("suggests type/ prefix for type-like tags", async () => {
+    const result = await generateVerify(testVaultPath);
+
+    const typeSuggestions = result.data.suggestions.filter(
+      (s) => s.suggestedTag.startsWith("type/"),
+    );
+
+    expect(typeSuggestions.length).toBeGreaterThanOrEqual(3);
+    expect(typeSuggestions.some((s) => s.currentTag === "meeting")).toBe(true);
+    expect(typeSuggestions.some((s) => s.currentTag === "research")).toBe(true);
+    expect(typeSuggestions.some((s) => s.currentTag === "documentation")).toBe(true);
+  });
+
+  test("suggests tool/ prefix for tool-like tags", async () => {
+    const result = await generateVerify(testVaultPath);
+
+    const toolSuggestions = result.data.suggestions.filter(
+      (s) => s.suggestedTag.startsWith("tool/"),
+    );
+
+    expect(toolSuggestions.length).toBeGreaterThanOrEqual(2);
+    expect(toolSuggestions.some((s) => s.currentTag === "obsidian")).toBe(true);
+    expect(toolSuggestions.some((s) => s.currentTag === "notion")).toBe(true);
+  });
+
+  test("does not suggest for already-hierarchical tags", async () => {
+    const result = await generateVerify(testVaultPath);
+
+    // hierarchical.md has status/active, project/phoenix, area/career
+    // These should NOT appear in suggestions
+    const badSuggestions = result.data.suggestions.filter(
+      (s) => s.currentTag === "status/active" ||
+             s.currentTag === "project/phoenix" ||
+             s.currentTag === "area/career",
+    );
+
+    expect(badSuggestions.length).toBe(0);
+  });
+
+  test("includes suggestions count in stats", async () => {
+    const result = await generateVerify(testVaultPath);
+    expect(result.stats.suggestionsCount).toBe(result.data.suggestions.length);
+    expect(result.stats.suggestionsCount).toBeGreaterThan(0);
+  });
+
+  test("includes file path in suggestions", async () => {
+    const result = await generateVerify(testVaultPath);
+
+    for (const suggestion of result.data.suggestions) {
+      expect(suggestion.path).toBeDefined();
+      expect(suggestion.path.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("includes reason in suggestions", async () => {
+    const result = await generateVerify(testVaultPath);
+
+    for (const suggestion of result.data.suggestions) {
+      expect(suggestion.reason).toBeDefined();
+      expect(suggestion.reason.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("formatVerifyMarkdown suggestions", () => {
+  test("includes potential improvements section when suggestions exist", async () => {
+    const result = await generateVerify(testVaultPath);
+    const md = formatVerifyMarkdown(result);
+
+    if (result.stats.suggestionsCount > 0) {
+      expect(md).toContain("## Potential Improvements");
+      expect(md).toContain("could benefit from hierarchical prefixes");
+    }
+  });
+
+  test("groups suggestions by prefix", async () => {
+    const result = await generateVerify(testVaultPath);
+    const md = formatVerifyMarkdown(result);
+
+    if (result.stats.suggestionsCount > 0) {
+      // Should have section headers for each prefix type
+      expect(md).toContain("suggestions");
+    }
+  });
+
+  test("includes disclaimer that suggestions are not violations", async () => {
+    const result = await generateVerify(testVaultPath);
+    const md = formatVerifyMarkdown(result);
+
+    if (result.stats.suggestionsCount > 0) {
+      expect(md).toContain("suggestions, not violations");
+    }
   });
 });
 

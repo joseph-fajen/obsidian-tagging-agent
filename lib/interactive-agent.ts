@@ -615,6 +615,24 @@ async function runGenerateVerifyPhase(config: Config): Promise<boolean> {
       console.log(`\n⚠️  ${compliance}% compliance — ${result.stats.notesWithViolations} notes need attention`);
     }
 
+    // Show suggestions if any
+    if (result.stats.suggestionsCount > 0) {
+      console.log(`\n💡 ${result.stats.suggestionsCount} potential improvements detected`);
+      console.log(`   See "_Tag Migration Verification.md" for details`);
+
+      // Show a few examples
+      const examples = result.data.suggestions.slice(0, 5);
+      if (examples.length > 0) {
+        console.log(`\n   Examples:`);
+        for (const s of examples) {
+          console.log(`     ${s.currentTag} → ${s.suggestedTag} (${s.path})`);
+        }
+        if (result.data.suggestions.length > 5) {
+          console.log(`     ... and ${result.data.suggestions.length - 5} more`);
+        }
+      }
+    }
+
     return true;
   } catch (error) {
     console.error("Error running verification:", error);
