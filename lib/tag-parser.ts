@@ -11,6 +11,32 @@ function stripCodeAndLinks(content: string): string {
     .replace(MARKDOWN_LINK_URL_RE, "");
 }
 
+/**
+ * Merge overlapping ranges to prevent duplicate content in segmentation.
+ * Ranges must be sorted by start position before calling.
+ */
+function mergeOverlappingRanges(ranges: { start: number; end: number }[]): { start: number; end: number }[] {
+  if (ranges.length === 0) return [];
+
+  const merged: { start: number; end: number }[] = [];
+  let current = { ...ranges[0] };
+
+  for (let i = 1; i < ranges.length; i++) {
+    const next = ranges[i];
+    if (next.start <= current.end) {
+      // Overlapping or adjacent - extend current range
+      current.end = Math.max(current.end, next.end);
+    } else {
+      // No overlap - push current and start new
+      merged.push(current);
+      current = { ...next };
+    }
+  }
+  merged.push(current);
+
+  return merged;
+}
+
 const INLINE_TAG_RE = /(?:^|(?<=\s))#([a-zA-Z0-9][a-zA-Z0-9_/=-]*)/g;
 
 export function extractInlineTags(content: string): string[] {
@@ -80,8 +106,11 @@ export function removeInlineTag(content: string, tag: string): string {
   }
   codeRanges.sort((a, b) => a.start - b.start);
 
+  // Merge overlapping ranges to prevent duplicate content
+  const mergedRanges = mergeOverlappingRanges(codeRanges);
+
   // Split content into code/non-code segments
-  for (const range of codeRanges) {
+  for (const range of mergedRanges) {
     if (range.start > lastIndex) {
       segments.push({ text: content.slice(lastIndex, range.start), isCode: false });
     }

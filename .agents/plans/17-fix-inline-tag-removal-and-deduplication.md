@@ -1,6 +1,7 @@
 ---
-status: PENDING
+status: IMPLEMENTED
 created_date: 2026-03-02
+implemented_date: 2026-03-02
 ---
 
 # Feature: Fix Inline Tag Removal and Deduplication Bugs

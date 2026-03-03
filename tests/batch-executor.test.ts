@@ -240,6 +240,43 @@ describe("executeBatch", () => {
     expect(content).not.toContain("meditation");
     expect(content).toContain("daily-reflection"); // Other tag still there
   });
+
+  test("silently deduplicates pre-existing duplicate tags", async () => {
+    // Create a note with pre-existing duplicates
+    await writeFile(
+      join(TEST_VAULT_PATH, "note-with-dupes.md"),
+      `---
+tags:
+  - duplicate-tag
+  - other-tag
+  - duplicate-tag
+---
+# Note with duplicates
+`
+    );
+
+    const entries: BatchEntry[] = [
+      {
+        path: "note-with-dupes.md",
+        changes: [{ oldTag: "other-tag", newTag: "type/other" }],
+      },
+    ];
+
+    const result = await executeBatch(
+      TEST_VAULT_PATH,
+      TEST_DATA_PATH,
+      entries,
+      1
+    );
+
+    expect(result.succeeded).toBe(1);
+
+    // Read back and verify deduplication
+    const content = await readFile(join(TEST_VAULT_PATH, "note-with-dupes.md"), "utf-8");
+    const tagMatches = content.match(/duplicate-tag/g) || [];
+    expect(tagMatches.length).toBe(1); // Only one occurrence now
+    expect(content).toContain("type/other");
+  });
 });
 
 // ============================================================================

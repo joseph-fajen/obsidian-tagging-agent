@@ -76,6 +76,9 @@ async function applyChangesToNote(
       }
     }
 
+    // Deduplicate tags (silently removes pre-existing duplicates)
+    currentTags = Array.from(new Set(currentTags));
+
     // Write back
     const newData = setFrontmatterTags(parsed.data, currentTags);
     const output = serializeFrontmatter(body, newData);

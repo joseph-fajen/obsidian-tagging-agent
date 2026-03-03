@@ -260,16 +260,18 @@ function generateDailyNotes(): GeneratedNote[] {
       tags.push(rng.pick(["daily-note", "daily_note", "DailyNote", "daily-notes"]));
     }
 
-    // Add some topic tags with format variants
+    // Add some topic tags with format variants (deduplicated)
     const topicCount = rng.int(1, 3);
-    for (let j = 0; j < topicCount; j++) {
+    const selectedTopics = new Set<string>();
+    while (selectedTopics.size < topicCount) {
       const tag = rng.pick(VALID_TAGS);
       if (FORMAT_VARIANTS[tag] && rng.next() > 0.6) {
-        tags.push(rng.pick(FORMAT_VARIANTS[tag]));
+        selectedTopics.add(rng.pick(FORMAT_VARIANTS[tag]));
       } else {
-        tags.push(tag);
+        selectedTopics.add(tag);
       }
     }
+    tags.push(...Array.from(selectedTopics));
 
     // Occasionally add noise tags (simulating copy-paste from docs)
     if (rng.next() > 0.7) {
@@ -343,7 +345,9 @@ function generateMeetingNotes(): GeneratedNote[] {
       "leadership",
     ]));
 
-    const frontmatter = formatFrontmatter(tags, { date: dateStr });
+    // Deduplicate tags before creating frontmatter
+    const uniqueTags = Array.from(new Set(tags));
+    const frontmatter = formatFrontmatter(uniqueTags, { date: dateStr });
     const body = MEETING_NOTE_CONTENT(meeting.name)
       .replace(/{person\d}/g, () => rng.pick(["Alice", "Bob", "Carol", "Dave", "Eve"]))
       .replace(/{agenda\d}/g, () => rng.pick(["Status update", "Blockers", "Next steps", "Demo"]))
@@ -775,7 +779,7 @@ async function generateVault() {
     folders.add(dir);
   }
 
-  for (const folder of folders) {
+  for (const folder of Array.from(folders)) {
     await mkdir(folder, { recursive: true });
   }
 

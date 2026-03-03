@@ -4,6 +4,61 @@ This document captures significant changes, the concerns that motivated them, an
 
 ---
 
+## 2026-03-02: Fix Inline Tag Removal and Deduplication Bugs
+
+### Session Context
+
+Three bugs were discovered during test vault validation:
+1. P1 (High): `removeInlineTag()` corrupted markdown when removing inline tags near code blocks
+2. P2 (Medium): Test vault generator created pre-existing duplicates via `rng.pick()`
+3. P3 (Low): Migration didn't clean pre-existing duplicate tags in frontmatter
+
+### Problem Statement
+
+**P1:** The `removeInlineTag()` function corrupted markdown when overlapping ranges (fenced code blocks, inline code, markdown links) weren't properly merged before segmentation. This caused code block content to be duplicated and backticks corrupted when removing multiple inline tags from the same note.
+
+**P2:** The test vault generator used `rng.pick()` in loops without deduplication, allowing the same tag to be selected multiple times and creating notes with duplicate frontmatter tags.
+
+**P3:** The batch executor prevented adding new duplicates during migration but didn't clean up pre-existing duplicates, leaving notes with duplicate tags after migration.
+
+### Solution Implemented
+
+**P1 Fix: Add `mergeOverlappingRanges()` helper**
+- Added helper function that merges overlapping/adjacent ranges before segmentation
+- Standard interval merging algorithm: sort by start, extend current range if next overlaps
+- Called in `removeInlineTag()` after collecting and sorting code ranges
+- Added comprehensive test coverage for multiple tag removals near code blocks
+
+**P2 Fix: Set-based collection in generators**
+- Updated `generateDailyNotes()` to use `Set<string>` with `while (set.size < count)` loop
+- Updated `generateMeetingNotes()` to deduplicate final tag array before `formatFrontmatter()`
+- Ensures exactly the requested number of unique tags
+
+**P3 Fix: Silent deduplication in batch executor**
+- Added `Array.from(new Set(currentTags))` before writing frontmatter
+- Preserves first occurrence (Set maintains insertion order)
+- Silent cleanup — no warnings generated for pre-existing duplicates
+- Added test for pre-existing duplicate cleanup
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `lib/tag-parser.ts` | Added `mergeOverlappingRanges()`, used in `removeInlineTag()` |
+| `lib/batch-executor.ts` | Added deduplication before `setFrontmatterTags()` call |
+| `scripts/generate-complex-vault.ts` | Set-based deduplication in generators |
+| `tests/tag-parser.test.ts` | Added 2 new tests for code block handling |
+| `tests/batch-executor.test.ts` | Added test for pre-existing duplicate cleanup |
+
+### Testing
+
+- All 371 tests pass
+- Tag parser tests: 30 pass including 2 new tests for code block corruption
+- Batch executor tests: 18 pass including new deduplication test
+- Type checking passes (pre-existing workshop errors excluded)
+
+---
+
 ## 2026-02-26: Fix Underscore/Case Tag Handling and Simplify Interactive Flow
 
 ### Session Context

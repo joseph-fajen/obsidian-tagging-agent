@@ -171,4 +171,60 @@ describe("removeInlineTag", () => {
     expect(result).not.toContain("#TAG1");
     expect(result).not.toContain("#tag1");
   });
+
+  test("handles multiple tag removals near code blocks without corruption", () => {
+    const content = `# Test Note
+
+Real tag: #blockchain
+
+\`\`\`python
+# This is a comment with #fake-tag
+code = "value"
+\`\`\`
+
+Inline code: \`#not-a-tag\` here.
+
+Another tag: #ai-tools
+`;
+
+    // Remove first tag
+    let result = removeInlineTag(content, "blockchain");
+    // Remove second tag
+    result = removeInlineTag(result, "ai-tools");
+
+    // Code block should NOT be corrupted or duplicated
+    expect(result).toContain("```python");
+    expect(result).toContain("# This is a comment with #fake-tag");
+    expect(result).toContain("```\n\nInline code:");
+
+    // Tags should be removed
+    expect(result).not.toContain("#blockchain");
+    expect(result).not.toContain("#ai-tools");
+
+    // Inline code should be preserved
+    expect(result).toContain("`#not-a-tag`");
+
+    // Content should NOT be duplicated
+    const codeBlockCount = (result.match(/```python/g) || []).length;
+    expect(codeBlockCount).toBe(1);
+  });
+
+  test("handles inline code inside text near fenced blocks", () => {
+    const content = `Text with \`inline\` code.
+
+\`\`\`
+block
+\`\`\`
+
+More \`inline\` and #tag here.`;
+
+    const result = removeInlineTag(content, "tag");
+
+    // Both inline code spans should be preserved
+    expect((result.match(/`inline`/g) || []).length).toBe(2);
+    // Code block preserved
+    expect(result).toContain("```\nblock\n```");
+    // Tag removed
+    expect(result).not.toContain("#tag");
+  });
 });
