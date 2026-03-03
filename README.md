@@ -110,18 +110,18 @@ The agent will detect your saved session and offer to resume where you left off.
 
 For scripted or non-interactive use, you can run individual phases directly.
 
-The agent runs in five steps: four LLM-powered phases plus one deterministic code step. Each is a separate CLI invocation. **Run them in order** and review the output between each step.
+The agent runs in five phases: only Plan and Execute use the LLM. The rest are deterministic code (instant and free). Each is a separate CLI invocation. **Run them in order** and review the output between each step.
 
 ```
-generate-audit (CODE) → plan (LLM) → generate-worklist (CODE) → execute (LLM) → verify (LLM)
+audit (CODE) → plan (LLM) → generate-worklist (CODE) → execute (LLM) → verify (CODE)
 ```
 
-### Phase 1: Generate Audit (Recommended)
+### Phase 1: Audit
 
 Scans the entire vault deterministically and catalogs all tags with accurate frequencies. This is code-driven (no LLM), instant, and free.
 
 ```bash
-bun run tagging-agent.ts generate-audit
+bun run tagging-agent.ts audit
 ```
 
 **Outputs:**
@@ -134,16 +134,6 @@ bun run tagging-agent.ts generate-audit
 - Tag frequency distribution
 
 This step is instant and free (no API calls).
-
-### Phase 1 (Alternative): LLM Audit
-
-The original LLM-driven audit phase. Use `generate-audit` instead for accurate results — the LLM audit tends to miss tags due to sampling.
-
-```bash
-bun run tagging-agent.ts audit
-```
-
-**Review:** Open `_Tag Audit Report.md` in your vault. Check that tag counts look right and noise tags are correctly identified. This phase is read-only (no notes are modified).
 
 ### Phase 2: Plan
 
@@ -192,13 +182,18 @@ bun run tagging-agent.ts execute
 
 ### Phase 4: Verify
 
-Performs a fresh full-vault scan checking for zero inline tags, scheme compliance, and orphan tags. Writes a verification report.
+Performs a deterministic full-vault scan checking for compliance: no inline tags, valid tag formats, no duplicates, no noise tags remaining. This is code-driven (no LLM), instant, and free.
 
 ```bash
 bun run tagging-agent.ts verify
 ```
 
-**Review:** Open `_Tag Migration Verification.md` in your vault. Look for the compliance percentage and any violations listed.
+**Outputs:**
+- `_Tag Migration Verification.md` — Compliance report with any violations listed
+
+**Review:** Check the compliance percentage. Any violations are listed with specific notes and issues to fix.
+
+This step is instant and free (no API calls).
 
 ## Rolling Back
 
@@ -227,12 +222,13 @@ Each invocation respects `MAX_BUDGET_USD`. Typical costs:
 
 | Phase | Estimate |
 |-------|----------|
-| Generate Audit | $0.00 (no LLM) |
-| Audit (LLM) | ~$0.30-0.50 (reads all 884 notes at minimal detail) |
-| Generate Worklist | $0.00 (no LLM) |
+| Audit | $0.00 (deterministic code) |
 | Plan | ~$0.15-0.25 (reads audit-data.json + scheme, writes plan) |
+| Generate Worklist | $0.00 (deterministic code) |
 | Execute (per batch of 50) | ~$0.06 (prompt injection: batch data embedded directly) |
-| Verify | ~$0.30-0.50 (reads all notes at minimal detail) |
+| Verify | $0.00 (deterministic code) |
+
+**Total migration cost: ~$0.25** (only Plan uses the LLM).
 
 **Cost optimization:** Execute phase uses Haiku by default for supervision since execution is code-driven. Configure with `EXECUTE_MODEL` env var.
 
@@ -252,6 +248,7 @@ lib/
   frontmatter.ts          # gray-matter wrapper
   tag-parser.ts           # Inline tag extraction + validation
   audit-generator.ts      # Deterministic audit generation (no LLM)
+  verify-generator.ts     # Deterministic verification (no LLM)
   plan-extractor.ts       # Code-driven extraction of mappings from plan markdown
   worklist-generator.ts   # Deterministic worklist generation (no LLM)
   types.ts                # Shared types: WorkScope, BatchResult, MigrationProgress

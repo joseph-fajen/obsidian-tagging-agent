@@ -7,6 +7,7 @@ import { createDataTools } from "./tools/data-tools.js";
 import { generateWorklist, loadMappings, formatWorklistMarkdown, writeWorklistJson, type MigrationWorklist, type NoteChanges, type NextBatch } from "./lib/worklist-generator.js";
 import { extractMappingsFromPlanFile, writePlanMappingsJson } from "./lib/plan-extractor.js";
 import { generateAudit, formatAuditMarkdown, writeAuditJson } from "./lib/audit-generator.js";
+import { generateVerify, formatVerifyMarkdown } from "./lib/verify-generator.js";
 import { runInteractiveAgent } from "./lib/interactive-agent.js";
 import { join } from "path";
 import { readFile, writeFile, unlink, mkdir } from "fs/promises";
@@ -784,7 +785,7 @@ async function ensureDataDirectory(dataPath: string): Promise<void> {
 async function runAgent(config: Config) {
   const modeArg = process.argv[2] as AgentMode | undefined;
   const mode =
-    modeArg && ["audit", "generate-audit", "plan", "generate-worklist", "execute", "verify"].includes(modeArg)
+    modeArg && ["audit", "generate-audit", "plan", "generate-worklist", "execute", "verify", "generate-verify"].includes(modeArg)
       ? (modeArg as AgentMode)
       : config.agentMode;
 
@@ -912,8 +913,9 @@ async function runAgent(config: Config) {
     return;
   }
 
-  // generate-audit mode: pure code, no LLM
-  if (mode === "generate-audit") {
+  // audit and generate-audit modes: pure code, no LLM
+  // (audit mode was deprecated — now runs code-driven)
+  if (mode === "audit" || mode === "generate-audit") {
     console.log("Generating audit deterministically (no LLM)...\n");
 
     // Check scheme note exists
@@ -974,17 +976,69 @@ async function runAgent(config: Config) {
     return;
   }
 
-  // Pre-flight check for audit mode — verify schema note exists
-  if (mode === "audit") {
-    const hasScheme = await checkSchemeNoteExists(config);
-    if (!hasScheme) {
-      console.log("=".repeat(60));
-      console.log(`Mode: ${mode} — schema note required`);
-      console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
-      console.log(`Cost: $0.0000 (pre-flight check only)`);
-      console.log("=".repeat(60));
-      return;
+  // verify and generate-verify modes: pure code, no LLM
+  // (verify mode was deprecated — now runs code-driven)
+  if (mode === "verify" || mode === "generate-verify") {
+    console.log("Verifying deterministically (no LLM)...\n");
+
+    const result = await generateVerify(config.vaultPath);
+
+    // Print stats
+    console.log(`Notes scanned: ${result.stats.totalNotesScanned}`);
+    console.log(`Notes compliant: ${result.stats.notesCompliant}`);
+    console.log(`Notes with violations: ${result.stats.notesWithViolations}`);
+    if (result.stats.notesSkipped > 0) {
+      console.log(`Notes skipped: ${result.stats.notesSkipped}`);
     }
+
+    if (result.stats.notesWithViolations > 0) {
+      console.log(`\nViolation breakdown:`);
+      if (result.stats.inlineTagViolations > 0) {
+        console.log(`  - Inline tags: ${result.stats.inlineTagViolations} notes`);
+      }
+      if (result.stats.hashPrefixViolations > 0) {
+        console.log(`  - Hash prefix: ${result.stats.hashPrefixViolations} notes`);
+      }
+      if (result.stats.formatViolations > 0) {
+        console.log(`  - Format issues: ${result.stats.formatViolations} notes`);
+      }
+      if (result.stats.duplicateViolations > 0) {
+        console.log(`  - Duplicates: ${result.stats.duplicateViolations} notes`);
+      }
+      if (result.stats.noiseTagViolations > 0) {
+        console.log(`  - Noise tags: ${result.stats.noiseTagViolations} notes`);
+      }
+    }
+
+    if (result.warnings.length > 0) {
+      console.log(`\nWarnings:`);
+      for (const w of result.warnings.slice(0, 10)) console.log(`  - ${w}`);
+      if (result.warnings.length > 10) {
+        console.log(`  ... and ${result.warnings.length - 10} more`);
+      }
+    }
+
+    // Write markdown report to vault
+    const reportMarkdown = formatVerifyMarkdown(result);
+    const reportPath = join(config.vaultPath, "_Tag Migration Verification.md");
+    await writeFile(reportPath, reportMarkdown, "utf-8");
+    console.log(`\nVerification report written to _Tag Migration Verification.md`);
+
+    // Summary
+    const compliance = result.data.compliancePercent.toFixed(1);
+    if (result.stats.notesWithViolations === 0) {
+      console.log(`\n✅ ${compliance}% compliance — all notes pass verification!`);
+    } else {
+      console.log(`\n⚠️  ${compliance}% compliance — ${result.stats.notesWithViolations} notes need attention`);
+    }
+
+    console.log();
+    console.log("=".repeat(60));
+    console.log(`Mode: generate-verify complete`);
+    console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+    console.log(`Cost: $0.0000 (no LLM used)`);
+    console.log("=".repeat(60));
+    return;
   }
 
   // Pre-flight check for execute mode
@@ -1022,17 +1076,14 @@ async function runAgent(config: Config) {
     }
   }
 
+  // Only plan and execute modes reach here (audit/verify are now code-driven)
   let systemPrompt: string;
-  if (mode === "audit") {
-    systemPrompt = buildAuditSystemPrompt(config);
-  } else if (mode === "plan") {
+  if (mode === "plan") {
     systemPrompt = buildPlanSystemPrompt(config);
   } else if (mode === "execute") {
     systemPrompt = buildExecuteSystemPrompt(config);
-  } else if (mode === "verify") {
-    systemPrompt = buildVerifySystemPrompt(config);
   } else {
-    throw new Error(`Unknown mode: "${mode}"`);
+    throw new Error(`Unknown mode: "${mode}" — should not reach here`);
   }
 
   const userPrompt = buildUserPrompt(mode, config);
@@ -1207,7 +1258,7 @@ async function analyzeErrorWithLLM(
 async function runWithRecovery(config: Config): Promise<void> {
   const modeArg = process.argv[2] as AgentMode | undefined;
   const mode =
-    modeArg && ["audit", "generate-audit", "plan", "generate-worklist", "execute", "verify"].includes(modeArg)
+    modeArg && ["audit", "generate-audit", "plan", "generate-worklist", "execute", "verify", "generate-verify"].includes(modeArg)
       ? (modeArg as AgentMode)
       : config.agentMode;
 

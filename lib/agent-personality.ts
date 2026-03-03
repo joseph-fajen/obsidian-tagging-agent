@@ -322,14 +322,14 @@ export function buildPhaseTransitionPrompt(
   if (fromPhase === "WELCOME" && toPhase === "AUDIT") {
     return `Let's start by auditing your vault to understand its current tagging state.
 
-I'll scan every note, catalog all tags, and identify which ones need attention.`;
+This is instant and free — deterministic code scans every note and catalogs all tags.`;
   }
 
   // Audit → Plan
   if (fromPhase === "AUDIT" && toPhase === "PLAN") {
-    return `The audit is complete! I've written a report to your vault.
+    return `The audit is complete! Report written to your vault.
 
-Take a moment to review \`_Tag Audit Report.md\` in Obsidian. It shows all the tags I found, their frequencies, and my initial classification.`;
+Take a moment to review \`_Tag Audit Report.md\` in Obsidian. It shows all the tags found, their frequencies, and any format issues detected.`;
   }
 
   // Plan → Generate Worklist
@@ -365,9 +365,9 @@ This shows exactly which notes will be changed and how. Time to apply the change
 
 Check \`git log\` in your vault to see the changes. Ready for the next batch when you are.`;
     }
-    return `All notes have been processed!
+    return `All notes have been processed — migration complete!
 
-The tag migration is complete. Let's verify the results.`;
+Let's verify the results. This is instant — deterministic code checks every note.`;
   }
 
   // Verify → Complete

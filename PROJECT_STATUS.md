@@ -2,18 +2,25 @@
 
 This file tracks the current development state for Claude Code context. It's the single source of truth for what's been implemented, what's pending, and known issues.
 
-**Last Updated:** 2026-02-26
+**Last Updated:** 2026-03-02
 
 ---
 
 ## Current Phase
 
-**Status:** Production-ready — Architecture cleanup complete
+**Status:** Production-ready — Deterministic audit and verify phases
 
-The agent architecture has been refined for reliability and clarity:
-- **Code-driven plan extraction:** `generate-worklist` now parses the markdown mapping table and writes `plan-mappings.json` deterministically — no longer relying on LLM to write JSON
-- **Strict phase separation:** Audit discovers tags; Plan creates mapping table; Code extracts it
-- **Architecture documentation:** New `docs/ARCHITECTURE.md` explains design decisions
+The agent architecture has been refined for maximum reliability and minimal cost:
+- **Deterministic audit and verify:** Both phases now use code-only implementation (no LLM)
+- **LLM only where it adds value:** Only Plan phase uses LLM (interpreting user's scheme note)
+- **Total migration cost: ~$0.25** — down from ~$1.50 with LLM audit/verify
+
+**Key Changes (2026-03-02):**
+- `lib/verify-generator.ts` — New deterministic verification (no LLM)
+- `audit` mode now runs code-driven (same as `generate-audit`)
+- `verify` mode now runs code-driven (same as `generate-verify`)
+- Interactive mode uses code for audit/verify phases
+- LLM audit/verify removed (unreliable, expensive)
 
 **Key Changes (2026-02-26):**
 - `lib/plan-extractor.ts` — New module for markdown table parsing
@@ -41,6 +48,8 @@ The agent architecture has been refined for reliability and clarity:
 | `lib/preview-generator.ts` | ✅ Complete | Preview generation without applying changes |
 | `lib/batch-executor.ts` | ✅ Complete | Code-driven batch execution with progress tracking |
 | `lib/plan-extractor.ts` | ✅ Complete | Code-driven extraction of mappings from plan markdown |
+| `lib/audit-generator.ts` | ✅ Complete | Deterministic audit generation (no LLM) |
+| `lib/verify-generator.ts` | ✅ Complete | Deterministic verification (no LLM) |
 | `tag-scheme.ts` | ✅ Complete | TAG_MAPPINGS, lookupTagMapping(), noise patterns |
 
 ### MCP Tools ✅
@@ -64,15 +73,15 @@ The agent architecture has been refined for reliability and clarity:
 | Mode | Status | Notes |
 |------|--------|-------|
 | `interactive` | ✅ Complete | Guided conversational experience (default) |
-| `audit` | ✅ Complete | LLM-driven, writes report + JSON |
+| `audit` | ✅ Complete | Deterministic code (no LLM), instant, free |
 | `plan` | ✅ Complete | LLM-driven, creates mapping table |
 | `generate-worklist` | ✅ Complete | Deterministic code (no LLM) |
 | `execute` | ✅ Complete | Supervisor/Worker: LLM supervises, code executes |
-| `verify` | ✅ Complete | LLM-driven, compliance scan |
+| `verify` | ✅ Complete | Deterministic code (no LLM), instant, free |
 
 ### Tests ✅
 
-- 290 tests passing across 19 test files
+- 367+ tests passing across 22+ test files
 - `bun test` runs successfully
 
 ---
@@ -92,6 +101,8 @@ The agent architecture has been refined for reliability and clarity:
 | Supervisor/Worker Architecture | `.agents/plans/supervisor-worker-implementation.md` | ✅ Yes |
 | Plan Phase Audit Data Usage | `.agents/plans/fix-plan-phase-audit-data-usage.md` | ✅ Yes |
 | Architecture Cleanup | `.agents/plans/architecture-cleanup-and-documentation.md` | ✅ Yes |
+| Deterministic Audit Generator | `.agents/plans/deterministic-audit-generator.md` | ✅ Yes |
+| Deterministic Audit/Verify | `.agents/plans/deterministic-audit-verify.md` | ✅ Yes |
 
 ---
 

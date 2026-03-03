@@ -37,6 +37,15 @@ import {
   extractMappingsFromPlanFile,
   writePlanMappingsJson,
 } from "./plan-extractor.js";
+import {
+  generateAudit,
+  formatAuditMarkdown,
+  writeAuditJson,
+} from "./audit-generator.js";
+import {
+  generateVerify,
+  formatVerifyMarkdown,
+} from "./verify-generator.js";
 import { createVaultTools } from "../tools/vault-tools.js";
 import { createTagTools } from "../tools/tag-tools.js";
 import { createGitTools } from "../tools/git-tools.js";
@@ -527,6 +536,92 @@ async function runGenerateWorklistPhase(config: Config): Promise<boolean> {
   }
 }
 
+async function runGenerateAuditPhase(config: Config): Promise<boolean> {
+  console.log("Auditing deterministically (no LLM)...\n");
+
+  try {
+    const result = await generateAudit(config.vaultPath);
+
+    // Print stats
+    console.log(`Notes scanned: ${result.stats.totalNotesScanned}`);
+    console.log(`Notes with tags: ${result.stats.notesWithTags}`);
+    console.log(`Unique tags found: ${result.stats.uniqueTags}`);
+    console.log(`Format issues: ${result.stats.formatIssues}`);
+    console.log(`Noise tags: ${result.stats.noiseTags}`);
+
+    if (result.warnings.length > 0) {
+      console.log(`\nWarnings:`);
+      for (const w of result.warnings.slice(0, 10)) console.log(`  - ${w}`);
+      if (result.warnings.length > 10) {
+        console.log(`  ... and ${result.warnings.length - 10} more`);
+      }
+    }
+
+    // Write JSON
+    await writeAuditJson(config.dataPath, result.data);
+    console.log(`\nAudit data written to data/audit-data.json`);
+
+    // Write markdown report
+    const reportMarkdown = formatAuditMarkdown(result);
+    const reportPath = join(config.vaultPath, "_Tag Audit Report.md");
+    await writeFile(reportPath, reportMarkdown, "utf-8");
+    console.log(`Audit report written to _Tag Audit Report.md`);
+
+    return true;
+  } catch (error) {
+    console.error("Error running audit:", error);
+    return false;
+  }
+}
+
+async function runGenerateVerifyPhase(config: Config): Promise<boolean> {
+  console.log("Verifying deterministically (no LLM)...\n");
+
+  try {
+    const result = await generateVerify(config.vaultPath);
+
+    // Print stats
+    console.log(`Notes scanned: ${result.stats.totalNotesScanned}`);
+    console.log(`Notes compliant: ${result.stats.notesCompliant}`);
+    console.log(`Notes with violations: ${result.stats.notesWithViolations}`);
+
+    if (result.stats.notesWithViolations > 0) {
+      console.log(`\nViolation breakdown:`);
+      if (result.stats.inlineTagViolations > 0) {
+        console.log(`  - Inline tags: ${result.stats.inlineTagViolations} notes`);
+      }
+      if (result.stats.formatViolations > 0) {
+        console.log(`  - Format issues: ${result.stats.formatViolations} notes`);
+      }
+      if (result.stats.duplicateViolations > 0) {
+        console.log(`  - Duplicates: ${result.stats.duplicateViolations} notes`);
+      }
+      if (result.stats.noiseTagViolations > 0) {
+        console.log(`  - Noise tags: ${result.stats.noiseTagViolations} notes`);
+      }
+    }
+
+    // Write markdown report
+    const reportMarkdown = formatVerifyMarkdown(result);
+    const reportPath = join(config.vaultPath, "_Tag Migration Verification.md");
+    await writeFile(reportPath, reportMarkdown, "utf-8");
+    console.log(`\nVerification report written to _Tag Migration Verification.md`);
+
+    // Summary
+    const compliance = (result.stats.notesCompliant / result.stats.totalNotesScanned * 100).toFixed(1);
+    if (result.stats.notesWithViolations === 0) {
+      console.log(`\n✅ ${compliance}% compliance — all notes pass verification!`);
+    } else {
+      console.log(`\n⚠️  ${compliance}% compliance — ${result.stats.notesWithViolations} notes need attention`);
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error running verification:", error);
+    return false;
+  }
+}
+
 // ============================================================================
 // STATE TRANSITIONS
 // ============================================================================
@@ -655,11 +750,12 @@ export async function runInteractiveAgent(config: Config): Promise<void> {
       let notesRemaining = 0;
 
       // Handle different phase types
-      if (phase === "AUDIT" || phase === "VERIFY") {
-        // LLM phases (no pre-flight needed)
-        const result = await runLLMPhase(phase, state.sessionId, config);
-        state.sessionId = result.sessionId;
-        phaseSuccess = result.success;
+      if (phase === "AUDIT") {
+        // Code-driven audit (no LLM)
+        phaseSuccess = await runGenerateAuditPhase(config);
+      } else if (phase === "VERIFY") {
+        // Code-driven verify (no LLM)
+        phaseSuccess = await runGenerateVerifyPhase(config);
       } else if (phase === "PLAN") {
         // Plan phase with pre-flight check
         const prerequisitesMet = await checkPlanPrerequisites(config.dataPath, config.vaultPath);
