@@ -6,6 +6,7 @@ import { createGitTools } from "./tools/git-tools.js";
 import { createDataTools } from "./tools/data-tools.js";
 import { generateWorklist, loadMappings, formatWorklistMarkdown, writeWorklistJson, type MigrationWorklist, type NoteChanges, type NextBatch } from "./lib/worklist-generator.js";
 import { extractMappingsFromPlanFile, writePlanMappingsJson } from "./lib/plan-extractor.js";
+import { generateAudit, formatAuditMarkdown, writeAuditJson } from "./lib/audit-generator.js";
 import { runInteractiveAgent } from "./lib/interactive-agent.js";
 import { join } from "path";
 import { readFile, writeFile, unlink, mkdir } from "fs/promises";
@@ -406,6 +407,9 @@ export function buildUserPrompt(mode: AgentMode, config: Config): string {
   if (mode === "audit") {
     return `Audit all tags in the vault at ${config.vaultPath}. Write the report to _Tag Audit Report.md.`;
   }
+  if (mode === "generate-audit") {
+    return `Generate a deterministic audit of all tags in the vault at ${config.vaultPath}.`;
+  }
   if (mode === "plan") {
     return `Generate a tag migration plan based on the audit report. Write the plan to _Tag Migration Plan.md. The per-note worklist will be generated separately by the generate-worklist command. Batch size for execution will be ${config.batchSize}.`;
   }
@@ -780,7 +784,7 @@ async function ensureDataDirectory(dataPath: string): Promise<void> {
 async function runAgent(config: Config) {
   const modeArg = process.argv[2] as AgentMode | undefined;
   const mode =
-    modeArg && ["audit", "plan", "generate-worklist", "execute", "verify"].includes(modeArg)
+    modeArg && ["audit", "generate-audit", "plan", "generate-worklist", "execute", "verify"].includes(modeArg)
       ? (modeArg as AgentMode)
       : config.agentMode;
 
@@ -902,6 +906,68 @@ async function runAgent(config: Config) {
     console.log();
     console.log("=".repeat(60));
     console.log(`Mode: generate-worklist complete`);
+    console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+    console.log(`Cost: $0.0000 (no LLM used)`);
+    console.log("=".repeat(60));
+    return;
+  }
+
+  // generate-audit mode: pure code, no LLM
+  if (mode === "generate-audit") {
+    console.log("Generating audit deterministically (no LLM)...\n");
+
+    // Check scheme note exists
+    const hasScheme = await checkSchemeNoteExists(config);
+    if (!hasScheme) {
+      console.log("=".repeat(60));
+      console.log(`Mode: generate-audit — schema note required`);
+      console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+      console.log(`Cost: $0.0000 (pre-flight check only)`);
+      console.log("=".repeat(60));
+      return;
+    }
+
+    const result = await generateAudit(config.vaultPath);
+
+    // Print stats
+    console.log(`Notes scanned: ${result.stats.totalNotesScanned}`);
+    console.log(`Notes with tags: ${result.stats.notesWithTags}`);
+    console.log(`Unique tags found: ${result.stats.uniqueTags}`);
+    console.log(`Format issues: ${result.stats.formatIssues}`);
+    console.log(`Noise tags: ${result.stats.noiseTags}`);
+    if (result.stats.notesSkipped > 0) {
+      console.log(`Notes skipped: ${result.stats.notesSkipped}`);
+    }
+    if (result.warnings.length > 0) {
+      console.log(`\nWarnings:`);
+      for (const w of result.warnings.slice(0, 10)) console.log(`  - ${w}`);
+      if (result.warnings.length > 10) {
+        console.log(`  ... and ${result.warnings.length - 10} more`);
+      }
+    }
+
+    // Write JSON to data/
+    await writeAuditJson(config.dataPath, result.data);
+    console.log(`\nAudit data written to data/audit-data.json`);
+
+    // Write markdown report to vault
+    const reportMarkdown = formatAuditMarkdown(result);
+    const reportPath = join(config.vaultPath, "_Tag Audit Report.md");
+    await writeFile(reportPath, reportMarkdown, "utf-8");
+    console.log(`Audit report written to _Tag Audit Report.md`);
+
+    // Summary
+    console.log(`\n${result.stats.uniqueTags} unique tags cataloged`);
+    if (result.stats.formatIssues > 0) {
+      console.log(`⚠️  ${result.stats.formatIssues} tags have format issues (see report)`);
+    }
+    if (result.stats.noiseTags > 0) {
+      console.log(`🗑️  ${result.stats.noiseTags} noise tags to remove`);
+    }
+
+    console.log();
+    console.log("=".repeat(60));
+    console.log(`Mode: generate-audit complete`);
     console.log(`Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
     console.log(`Cost: $0.0000 (no LLM used)`);
     console.log("=".repeat(60));
@@ -1141,7 +1207,7 @@ async function analyzeErrorWithLLM(
 async function runWithRecovery(config: Config): Promise<void> {
   const modeArg = process.argv[2] as AgentMode | undefined;
   const mode =
-    modeArg && ["audit", "plan", "generate-worklist", "execute", "verify"].includes(modeArg)
+    modeArg && ["audit", "generate-audit", "plan", "generate-worklist", "execute", "verify"].includes(modeArg)
       ? (modeArg as AgentMode)
       : config.agentMode;
 

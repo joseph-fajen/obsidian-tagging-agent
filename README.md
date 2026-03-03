@@ -113,12 +113,31 @@ For scripted or non-interactive use, you can run individual phases directly.
 The agent runs in five steps: four LLM-powered phases plus one deterministic code step. Each is a separate CLI invocation. **Run them in order** and review the output between each step.
 
 ```
-audit (LLM) → plan (LLM) → generate-worklist (CODE) → execute (LLM) → verify (LLM)
+generate-audit (CODE) → plan (LLM) → generate-worklist (CODE) → execute (LLM) → verify (LLM)
 ```
 
-### Phase 1: Audit
+### Phase 1: Generate Audit (Recommended)
 
-Scans every note, catalogs all tags with frequencies, classifies them against the proposed scheme, and identifies noise tags.
+Scans the entire vault deterministically and catalogs all tags with accurate frequencies. This is code-driven (no LLM), instant, and free.
+
+```bash
+bun run tagging-agent.ts generate-audit
+```
+
+**Outputs:**
+- `data/audit-data.json` — Machine-readable tag data for the plan phase
+- `_Tag Audit Report.md` — Human-readable report in your vault
+
+**Review:** Check the report for:
+- Format issues (underscores, uppercase) that need correction
+- Noise tags that will be removed
+- Tag frequency distribution
+
+This step is instant and free (no API calls).
+
+### Phase 1 (Alternative): LLM Audit
+
+The original LLM-driven audit phase. Use `generate-audit` instead for accurate results — the LLM audit tends to miss tags due to sampling.
 
 ```bash
 bun run tagging-agent.ts audit
@@ -208,7 +227,8 @@ Each invocation respects `MAX_BUDGET_USD`. Typical costs:
 
 | Phase | Estimate |
 |-------|----------|
-| Audit | ~$0.30-0.50 (reads all 884 notes at minimal detail) |
+| Generate Audit | $0.00 (no LLM) |
+| Audit (LLM) | ~$0.30-0.50 (reads all 884 notes at minimal detail) |
 | Generate Worklist | $0.00 (no LLM) |
 | Plan | ~$0.15-0.25 (reads audit-data.json + scheme, writes plan) |
 | Execute (per batch of 50) | ~$0.06 (prompt injection: batch data embedded directly) |

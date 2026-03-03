@@ -1,6 +1,6 @@
 import { join } from "path";
 
-export type AgentMode = "audit" | "plan" | "generate-worklist" | "execute" | "verify" | "interactive";
+export type AgentMode = "audit" | "generate-audit" | "plan" | "generate-worklist" | "execute" | "verify" | "interactive";
 
 /**
  * Phase-specific model configuration.
@@ -37,7 +37,7 @@ export interface Config {
   schemeNotePath: string;
 }
 
-const VALID_MODES: AgentMode[] = ["audit", "plan", "generate-worklist", "execute", "verify", "interactive"];
+const VALID_MODES: AgentMode[] = ["audit", "generate-audit", "plan", "generate-worklist", "execute", "verify", "interactive"];
 
 export function loadConfig(): Config {
   const vaultPath = process.env.VAULT_PATH;
