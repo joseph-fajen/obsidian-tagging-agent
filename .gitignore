@@ -15,6 +15,9 @@ reports/
 # Test artifacts (should use tmpdir, but safety measure)
 tests/__*__/
 
+# Generated test vault (regenerate with: bun run scripts/generate-complex-vault.ts)
+test-vault-complex/
+
 # OS
 .DS_Store
 Thumbs.db
