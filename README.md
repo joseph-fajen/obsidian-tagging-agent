@@ -251,6 +251,8 @@ lib/
   config.ts               # Environment variable loading, phase-specific models
   frontmatter.ts          # gray-matter wrapper
   tag-parser.ts           # Inline tag extraction + validation
+  audit-generator.ts      # Deterministic audit generation (no LLM)
+  plan-extractor.ts       # Code-driven extraction of mappings from plan markdown
   worklist-generator.ts   # Deterministic worklist generation (no LLM)
   types.ts                # Shared types: WorkScope, BatchResult, MigrationProgress
   scope-filter.ts         # Scope filtering: full, folder, files, recent, tag
@@ -264,7 +266,9 @@ tools/
   tag-tools.ts            # apply_tag_changes, preview_changes, execute_batch, get_progress
   git-tools.ts            # git_commit
   data-tools.ts           # read_data_file, write_data_file
-tests/                    # bun test files (285 tests)
+tests/                    # bun test files (290 tests)
+scripts/
+  generate-complex-vault.ts  # Generate test-vault-complex for testing
 data/                     # Runtime data (git-ignored, see below)
 .agents/
   plans/                  # Implementation plans (all marked IMPLEMENTED)
@@ -322,6 +326,36 @@ The agent auto-detects some stale state (e.g., worklist regenerated after migrat
 
 ```bash
 bun test
+```
+
+## Development
+
+### Test Vaults
+
+Two test vaults are available for development:
+
+- **test-vault/** — Small, manually curated vault (~50 notes) checked into git
+- **test-vault-complex/** — Larger generated vault (~85 notes) with systematic edge case coverage
+
+To regenerate the complex test vault:
+
+```bash
+bun run scripts/generate-complex-vault.ts
+```
+
+The complex vault is git-ignored and can be regenerated at any time. Manual edge cases in `test-vault-complex/Manual/` are preserved during regeneration.
+
+### Running Against a Test Vault
+
+```bash
+# Update .env
+VAULT_PATH="/path/to/obsidian-tagging-agent/test-vault-complex"
+
+# Clear any previous run data
+rm -f data/*.json
+
+# Run the agent
+bun run tagging-agent.ts generate-audit
 ```
 
 ## References
