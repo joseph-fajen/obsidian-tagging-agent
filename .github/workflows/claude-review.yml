@@ -1,4 +1,4 @@
-name: Claude Code Fix (Write Access)
+name: Claude Code Review (Read Only)
 
 on:
   issue_comment:
@@ -7,18 +7,18 @@ on:
     types: [created]
 
 jobs:
-  claude-fix:
+  claude-review:
     if: |
       (
         github.event_name == 'issue_comment' ||
         github.event_name == 'pull_request_review_comment'
       ) &&
-      (contains(github.event.comment.body, '@claude-fix') || contains(github.event.comment.body, '@claude-create')) &&
+      contains(github.event.comment.body, '@claude-review') &&
       contains(fromJSON('["joseph-fajen"]'), github.event.comment.user.login)
 
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
       issues: write
       id-token: write
@@ -28,41 +28,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Get PR number
+        run: |
+          if [ "${{ github.event_name }}" == "issue_comment" ]; then
+            echo "PR_NUM=${{ github.event.issue.number }}" >> $GITHUB_ENV
+          else
+            echo "PR_NUM=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          fi
+
       - name: Load instructions
         id: load-instructions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "${{ github.event_name }}" == "issue_comment" ]; then
-            NUM="${{ github.event.issue.number }}"
-          else
-            NUM="${{ github.event.pull_request.number }}"
-          fi
-
-          ISSUE_JSON=$(gh issue view $NUM --json labels,title,body)
-          LABELS=$(echo "$ISSUE_JSON" | jq -r '.labels[].name' | tr '\n' ' ')
-          TITLE=$(echo "$ISSUE_JSON" | jq -r '.title')
-          BODY=$(echo "$ISSUE_JSON" | jq -r '.body')
-
-          if echo "$LABELS" | grep -qiE "enhancement|feature|new feature"; then
-            TEMPLATE_FILE=".github/workflows/prompts/end-to-end-feature-github.md"
-          elif echo "$LABELS" | grep -qi "bug"; then
-            TEMPLATE_FILE=".github/workflows/prompts/bug-fix-github.md"
-          else
-            TEMPLATE_FILE=".github/workflows/prompts/bug-fix-github.md"
-          fi
-
-          TEMPLATE=$(cat $TEMPLATE_FILE)
+          TEMPLATE=$(cat .github/workflows/prompts/code-review-github.md)
           TEMPLATE="${TEMPLATE//\$REPOSITORY/${{ github.repository }}}"
-          TEMPLATE="${TEMPLATE//\$ISSUE_NUMBER/$NUM}"
-          TEMPLATE="${TEMPLATE//\$ISSUE_TITLE/$TITLE}"
-          TEMPLATE="${TEMPLATE//\$ISSUE_BODY/$BODY}"
+          TEMPLATE="${TEMPLATE//\$PR_NUMBER/$PR_NUM}"
           TEMPLATE="${TEMPLATE//\$TRIGGERED_BY/${{ github.event.comment.user.login }}}"
-          TEMPLATE="${TEMPLATE//\$BRANCH_NAME/fix/issue-$NUM-claude}"
-          TEMPLATE="${TEMPLATE//\$CREATE_BRANCH/true}"
-          TEMPLATE="${TEMPLATE//\$CREATE_PR/true}"
-          TEMPLATE="${TEMPLATE//\$COMMENT_ON_ISSUE/true}"
-          TEMPLATE="${TEMPLATE//\$PLAN_PATH/}"
+          TEMPLATE="${TEMPLATE//\$IF_COMMENT_ON_PR/}"
+          TEMPLATE="${TEMPLATE//\$ENDIF_COMMENT_ON_PR/}"
 
           # Use unique delimiter to avoid escaping issues
           DELIMITER="INSTRUCTIONS_$(date +%s)_EOF"
@@ -70,7 +54,7 @@ jobs:
           echo "$TEMPLATE" >> $GITHUB_OUTPUT
           echo "${DELIMITER}" >> $GITHUB_OUTPUT
 
-      - name: Run Claude Code
+      - name: Run Claude Code Review
         uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -83,22 +67,35 @@ jobs:
         github.event_name == 'issue_comment' ||
         github.event_name == 'pull_request_review_comment'
       ) &&
-      (contains(github.event.comment.body, '@claude-fix') || contains(github.event.comment.body, '@claude-create')) &&
+      contains(github.event.comment.body, '@claude-review') &&
       !contains(fromJSON('["joseph-fajen"]'), github.event.comment.user.login)
 
     runs-on: ubuntu-latest
     permissions:
       issues: write
+      pull-requests: write
 
     steps:
       - uses: actions/github-script@v7
         with:
           script: |
+            const comment = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `❌ @${context.actor} - Not authorized`
+            };
+
             if (context.eventName === 'issue_comment') {
               await github.rest.issues.createComment({
+                ...comment,
+                issue_number: context.issue.number
+              });
+            } else if (context.eventName === 'pull_request_review_comment') {
+              await github.rest.pulls.createReplyForReviewComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: `❌ @${context.actor} - Not authorized`
+                pull_number: context.payload.pull_request.number,
+                comment_id: context.payload.comment.id,
+                body: comment.body
               });
             }
